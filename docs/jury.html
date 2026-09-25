@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Инструкция для жюри — МосТранс Предикт</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; line-height: 1.55; color: #122; }
+    h1 { font-size: 1.6rem; }
+    code, pre { background: #f4f6f8; padding: 2px 6px; border-radius: 4px; }
+    pre { padding: 12px; overflow: auto; }
+    .step { margin: 18px 0; padding: 14px; border-left: 4px solid #e31e24; background: #fafbfc; }
+  </style>
+</head>
+<body>
+  <h1>Инструкция для жюри</h1>
+  <p><strong>МосТранс Предикт</strong> — прогноз задержки ТС за 10–15 минут: ML-ядро + Backend + BI-дашборд.</p>
+
+  <div class="step">
+    <h2>1. Запуск (одна команда)</h2>
+    <pre>docker compose up --build</pre>
+    <p>Первый старт ML может занять 1–2 мин (bootstrap CatBoost + PyTorch + ONNX).</p>
+  </div>
+
+  <div class="step">
+    <h2>2. Куда смотреть</h2>
+    <ul>
+      <li><a href="/">Дашборд диспетчера</a> — карта, ТС, алерты, what-if</li>
+      <li><a href="/docs">Swagger / OpenAPI</a> — пробный запрос <code>GET /api/v1/health</code></li>
+      <li><a href="/api/v1/metrics">Метрики latency</a></li>
+      <li><a href="/artifacts/submission.csv"><b>submission.csv</b></a> — готовый сабмит для раздела Data Science</li>
+      <li>Эмулятор NDTP: TCP <code>localhost:9000</code> (JSON Lines)</li>
+    </ul>
+  </div>
+
+  <div class="step">
+    <h2>3. Как подать поток</h2>
+    <p><b>Автоматически:</b> эмулятор уже крутит 12 ТС по 4 маршрутам Москвы.</p>
+    <p><b>Вручную (исторический датасет):</b></p>
+    <pre>curl -X POST http://localhost/api/v1/telemetry/batch \
+  -H 'Content-Type: application/json' \
+  -d @your_frames.json</pre>
+    <p>Или один кадр: <code>POST /api/v1/telemetry</code> (см. Swagger).</p>
+  </div>
+
+  <div class="step">
+    <h2>4. Где прогнозы и алерты</h2>
+    <ul>
+      <li>Правая колонка «Инциденты» — ТС с высокой вероятностью задержки</li>
+      <li>Клик по карточке / маркеру — причина, горизонт 10–15 мин, рекомендация</li>
+      <li>Цвет маршрута и маркера: зелёный / жёлтый / красный</li>
+      <li>What-if — оценка выпуска +1…+3 ТС</li>
+    </ul>
+  </div>
+
+  <div class="step">
+    <h2>5. Надёжность</h2>
+    <p>Остановите контейнер <code>emulator</code> — backend уйдёт в degraded/historical без падения и восстановится после реконнекта.</p>
+  </div>
+</body>
+</html>

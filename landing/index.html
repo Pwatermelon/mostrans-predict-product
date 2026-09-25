@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>МосТранс Предикт — раннее предупреждение задержек</title>
+  <meta name="description" content="ИИ-система прогнозирования изменений графика наземного транспорта Москвы за 10–15 минут" />
+  <link rel="icon" href="/dashboard/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --red: #e31e24;
+      --ink: #e8eef5;
+      --muted: #8fa3b8;
+      --bg: #071421;
+      --font: "Manrope", system-ui, sans-serif;
+      --mono: "JetBrains Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; font-family: var(--font); color: var(--ink);
+      background:
+        radial-gradient(1000px 480px at 85% -10%, rgba(227,30,36,.22), transparent 55%),
+        radial-gradient(800px 400px at 0% 100%, rgba(61,184,197,.12), transparent 50%),
+        linear-gradient(165deg, #051018, var(--bg) 50%, #0a1a2c);
+      display: grid; place-items: center; padding: 32px 20px;
+    }
+    .card {
+      width: min(680px, 100%);
+      background: rgba(14, 36, 56, .9);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 18px; padding: 40px 36px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.4);
+      backdrop-filter: blur(12px);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+    .mark {
+      width: 34px; height: 34px; border-radius: 10px;
+      background: linear-gradient(135deg, transparent 46%, #fff 46% 54%, transparent 54%),
+        linear-gradient(135deg, var(--red), #8b1216);
+    }
+    .brand strong { font-size: 20px; letter-spacing: -0.03em; }
+    .brand strong span { color: var(--red); }
+    .tag {
+      font-family: var(--mono); font-size: 11px; color: #ff8a8e;
+      background: rgba(227,30,36,.12); border: 1px solid rgba(227,30,36,.35);
+      border-radius: 6px; padding: 4px 8px; display: inline-block; margin-bottom: 14px;
+    }
+    h1 { margin: 0 0 14px; font-size: 34px; letter-spacing: -0.04em; line-height: 1.12; }
+    p { margin: 0 0 12px; color: var(--muted); line-height: 1.55; font-size: 15px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+    a.btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      height: 46px; padding: 0 18px; border-radius: 10px; text-decoration: none;
+      font-weight: 700; font-size: 14px;
+    }
+    a.btn.primary { background: linear-gradient(180deg, #e53a3f, var(--red)); color: #fff; }
+    a.btn.ghost { background: rgba(255,255,255,.06); color: var(--ink); border: 1px solid rgba(255,255,255,.1); }
+    .note {
+      margin-top: 24px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.08);
+      font-family: var(--mono); font-size: 12px; color: var(--muted); line-height: 1.6;
+    }
+    .features {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px;
+    }
+    .feat {
+      padding: 12px; border-radius: 10px;
+      background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06);
+      font-size: 13px; color: var(--muted);
+    }
+    .feat b { display: block; color: var(--ink); margin-bottom: 4px; font-size: 13.5px; }
+    @media (max-width: 560px) {
+      h1 { font-size: 26px; }
+      .features { grid-template-columns: 1fr; }
+      .card { padding: 28px 22px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand">
+      <div class="mark"></div>
+      <strong>МосТранс<span> Предикт</span></strong>
+    </div>
+    <div class="tag" id="version-tag">хакатон Московского транспорта</div>
+    <h1>Прогноз сбоя графика за 10–15 минут до события</h1>
+    <p>
+      Поток NDTP → признаки и map matching → ансамбль CatBoost + PyTorch →
+      алерты на пульте диспетчера. От реактивного управления к упреждающему.
+    </p>
+    <div class="features">
+      <div class="feat"><b>ML-ядро</b>CatBoost + LSTM, горизонт 600–900 с</div>
+      <div class="feat"><b>Backend</b>NDTP, оркестрация, OpenAPI</div>
+      <div class="feat"><b>BI-дашборд</b>карта, риск, карточки инцидентов</div>
+      <div class="feat"><b>What-if</b>оценка выпуска резервного ТС</div>
+    </div>
+    <div class="actions">
+      <a class="btn primary" href="/">Открыть пульт диспетчера →</a>
+      <a class="btn ghost" href="/docs">Swagger API</a>
+      <a class="btn ghost" href="/docs/jury.html">Инструкция жюри</a>
+      <a class="btn ghost" href="/artifacts/submission.csv">Скачать submission.csv</a>
+    </div>
+    <p class="note" id="links-note">
+      Запуск: <code>docker compose up --build</code><br>
+      Дашборд · Swagger · эмулятор NDTP — в одном стеке.
+    </p>
+  </main>
+  <script>
+    fetch("/version.json")
+      .then((r) => r.json())
+      .then((v) => {
+        const el = document.getElementById("version-tag");
+        if (el && v.version) el.textContent = "v" + v.version + " · МосТранс Предикт";
+      })
+      .catch(() => {});
+  </script>
+</body>
+</html>

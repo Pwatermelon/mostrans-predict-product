@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>МосТранс Предикт — диспетчерский пульт</title>
+  <meta name="description" content="Раннее прогнозирование задержек наземного транспорта Москвы за 10–15 минут" />
+  <meta name="theme-color" content="#0B1F33" />
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div>
+          <div class="brand-name">МосТранс <span>Предикт</span></div>
+          <div class="brand-sub">горизонт 10–15 мин · NDTP · ансамбль ML</div>
+        </div>
+      </div>
+      <div class="status-cluster">
+        <div class="pill" id="mode-pill"><i class="dot"></i><span>подключение…</span></div>
+        <div class="stat"><label>Latency</label><strong id="lat-ms">—</strong></div>
+        <div class="stat"><label>Кадры</label><strong id="frames-n">0</strong></div>
+        <div class="stat"><label>Алерты</label><strong id="alerts-n">0</strong></div>
+        <div class="clock" id="clock">--:--:--</div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="map-pane">
+        <div id="map"></div>
+        <div class="map-legend">
+          <span><i class="lg green"></i>норма</span>
+          <span><i class="lg yellow"></i>риск</span>
+          <span><i class="lg red"></i>критично</span>
+        </div>
+        <div class="map-hint">Карта маршрутной сети · положение ТС в реальном времени</div>
+      </section>
+
+      <aside class="side">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Инциденты</h2>
+            <span class="badge" id="inc-badge">0</span>
+          </div>
+          <div class="incidents" id="incidents"></div>
+        </div>
+
+        <div class="panel whatif">
+          <div class="panel-head"><h2>What-if</h2></div>
+          <p class="muted">Оценка выпуска дополнительного ТС на график маршрута</p>
+          <div class="whatif-row">
+            <select id="wf-route"></select>
+            <select id="wf-extra">
+              <option value="1">+1 ТС</option>
+              <option value="2">+2 ТС</option>
+              <option value="3">+3 ТС</option>
+            </select>
+            <button type="button" id="wf-run">Рассчитать</button>
+          </div>
+          <div class="whatif-out" id="wf-out">Выберите маршрут и нажмите «Рассчитать»</div>
+        </div>
+
+        <div class="panel routes-panel">
+          <div class="panel-head"><h2>Маршруты</h2></div>
+          <div class="routes" id="routes"></div>
+        </div>
+      </aside>
+    </main>
+
+    <div class="drawer" id="drawer" hidden>
+      <div class="drawer-card" id="drawer-card"></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

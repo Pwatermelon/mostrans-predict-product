@@ -1,0 +1,44 @@
+# Production compose (на сервере). IMAGE_PREFIX=ghcr.io/<owner>/mostrans-predict-product
+services:
+  emulator:
+    image: ${IMAGE_PREFIX}-emulator:${APP_VERSION:-latest}
+    pull_policy: always
+    restart: unless-stopped
+
+  ml:
+    image: ${IMAGE_PREFIX}-ml:${APP_VERSION:-latest}
+    pull_policy: always
+    restart: unless-stopped
+
+  backend:
+    image: ${IMAGE_PREFIX}-backend:${APP_VERSION:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      MT_ML_URL: http://ml:8001
+      MT_EMULATOR_HOST: emulator
+      MT_EMULATOR_PORT: "9000"
+    depends_on:
+      - ml
+      - emulator
+
+  gateway:
+    image: ${IMAGE_PREFIX}-gateway:${APP_VERSION:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@localhost}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+
+volumes:
+  caddy_data:
+  caddy_config:

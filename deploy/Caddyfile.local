@@ -1,0 +1,72 @@
+{
+	admin off
+}
+
+:80 {
+	encode gzip zstd
+
+	handle /healthz {
+		reverse_proxy backend:8000
+	}
+
+	handle /version.json {
+		respond `{"product":"МосТранс Предикт","version":"dev","public":true}` 200
+	}
+
+	handle /docs/jury.html {
+		root * /srv
+		file_server
+	}
+
+	handle /docs/performance.md {
+		root * /srv
+		file_server
+	}
+
+	handle /docs/api.md {
+		root * /srv
+		file_server
+	}
+
+	handle /artifacts* {
+		reverse_proxy backend:8000
+	}
+
+	handle /landing* {
+		root * /srv
+		file_server
+	}
+
+	handle /openapi.json {
+		reverse_proxy backend:8000
+	}
+
+	handle /docs* {
+		reverse_proxy backend:8000
+	}
+
+	handle /redoc* {
+		reverse_proxy backend:8000
+	}
+
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	handle /ws/* {
+		reverse_proxy backend:8000
+	}
+
+	handle /static/* {
+		reverse_proxy backend:8000
+	}
+
+	handle / {
+		reverse_proxy backend:8000
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

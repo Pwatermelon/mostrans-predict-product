@@ -1,0 +1,91 @@
+{
+	email {$ACME_EMAIL}
+}
+
+:80 {
+	handle /healthz {
+		reverse_proxy backend:8000
+	}
+	handle /version.json {
+		root * /srv
+		file_server
+	}
+}
+
+{$DOMAIN:localhost} {
+	encode gzip zstd
+
+	handle /healthz {
+		reverse_proxy backend:8000
+	}
+
+	handle /version.json {
+		root * /srv
+		file_server
+	}
+
+	handle /landing* {
+		root * /srv
+		file_server
+	}
+
+	handle /docs/jury.html {
+		root * /srv
+		file_server
+	}
+
+	handle /docs/performance.md {
+		root * /srv
+		file_server
+	}
+
+	handle /docs/api.md {
+		root * /srv
+		file_server
+	}
+
+	handle /artifacts* {
+		root * /srv
+		file_server
+	}
+
+	handle /openapi.json {
+		reverse_proxy backend:8000
+	}
+
+	handle /docs* {
+		reverse_proxy backend:8000
+	}
+
+	handle /redoc* {
+		reverse_proxy backend:8000
+	}
+
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	handle /ws/* {
+		reverse_proxy backend:8000
+	}
+
+	handle /static/* {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		reverse_proxy backend:8000
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options SAMEORIGIN
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
