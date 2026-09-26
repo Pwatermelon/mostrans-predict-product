@@ -10,52 +10,58 @@
     code, pre { background: #f4f6f8; padding: 2px 6px; border-radius: 4px; }
     pre { padding: 12px; overflow: auto; }
     .step { margin: 18px 0; padding: 14px; border-left: 4px solid #e31e24; background: #fafbfc; }
+    .ok { border-left-color: #1fa97a; }
   </style>
 </head>
 <body>
   <h1>Инструкция для жюри</h1>
   <p><strong>МосТранс Предикт</strong> — прогноз задержки ТС за 10–15 минут: ML-ядро + Backend + BI-дашборд.</p>
 
+  <div class="step ok">
+    <h2>0. Академическая честность DS (потоковая ML)</h2>
+    <p>Файл <a href="/artifacts/submission.csv"><code>submission.csv</code></a> построен моделью
+      <code>delay_catboost_ds.cbm</code> — <b>той же</b>, что обслуживает <code>POST /predict</code> в контейнере <code>ml</code>.</p>
+    <ul>
+      <li>Признаки: <code>FEATURE_COLS</code> (см. <code>GET http://localhost:8001/feature_cols</code>)</li>
+      <li>Анти-утечка: только телеметрия / состояние на момент T</li>
+      <li>Проверка parity: <code>python scripts/verify_stream_parity.py --url http://localhost:8001</code></li>
+      <li>В шапке дашборда и в <code>GET /api/v1/metrics</code> поле <code>ml_model</code></li>
+    </ul>
+    <pre>curl -s http://localhost:8001/info | python3 -m json.tool</pre>
+  </div>
+
   <div class="step">
-    <h2>1. Запуск (одна команда)</h2>
+    <h2>1. Запуск</h2>
     <pre>docker compose up --build</pre>
-    <p>Первый старт ML может занять 1–2 мин (bootstrap CatBoost + PyTorch + ONNX).</p>
   </div>
 
   <div class="step">
     <h2>2. Куда смотреть</h2>
     <ul>
-      <li><a href="/">Дашборд диспетчера</a> — карта, ТС, алерты, what-if</li>
-      <li><a href="/docs">Swagger / OpenAPI</a> — пробный запрос <code>GET /api/v1/health</code></li>
-      <li><a href="/api/v1/metrics">Метрики latency</a></li>
-      <li><a href="/artifacts/submission.csv"><b>submission.csv</b></a> — готовый сабмит для раздела Data Science</li>
-      <li>Эмулятор NDTP: TCP <code>localhost:9000</code> (JSON Lines)</li>
+      <li><a href="/">Дашборд диспетчера</a> — карта, треки, таблица ТС, алерты, what-if, сообщения водителю</li>
+      <li><a href="/driver">Кабинет водителя</a> — мобильный вид: задержка, скорость, inbox</li>
+      <li><a href="/docs">Swagger</a> · <a href="/artifacts/submission.csv">submission.csv</a></li>
+      <li>Эмулятор NDTP: TCP <code>:9000</code></li>
     </ul>
   </div>
 
   <div class="step">
-    <h2>3. Как подать поток</h2>
-    <p><b>Автоматически:</b> эмулятор уже крутит 12 ТС по 4 маршрутам Москвы.</p>
-    <p><b>Вручную (исторический датасет):</b></p>
-    <pre>curl -X POST http://localhost/api/v1/telemetry/batch \
-  -H 'Content-Type: application/json' \
-  -d @your_frames.json</pre>
-    <p>Или один кадр: <code>POST /api/v1/telemetry</code> (см. Swagger).</p>
+    <h2>3. Поток телематики</h2>
+    <p>Эмулятор шлёт 12 ТС. Либо <code>POST /api/v1/telemetry</code> / <code>/telemetry/batch</code>.</p>
   </div>
 
   <div class="step">
-    <h2>4. Где прогнозы и алерты</h2>
+    <h2>4. Прогнозы и действия диспетчера</h2>
     <ul>
-      <li>Правая колонка «Инциденты» — ТС с высокой вероятностью задержки</li>
-      <li>Клик по карточке / маркеру — причина, горизонт 10–15 мин, рекомендация</li>
-      <li>Цвет маршрута и маркера: зелёный / жёлтый / красный</li>
-      <li>What-if — оценка выпуска +1…+3 ТС</li>
+      <li>Инциденты + цвет green/yellow/red, статус в пути / остановка / обед</li>
+      <li>Карточка: горизонт 10–15 мин, причина, реком. скорость, сообщение водителю</li>
+      <li>What-if: выпуск доп. ТС</li>
     </ul>
   </div>
 
   <div class="step">
     <h2>5. Надёжность</h2>
-    <p>Остановите контейнер <code>emulator</code> — backend уйдёт в degraded/historical без падения и восстановится после реконнекта.</p>
+    <p><code>docker compose stop emulator</code> — режим degraded/historical без падения сервиса.</p>
   </div>
 </body>
 </html>

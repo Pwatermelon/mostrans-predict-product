@@ -113,3 +113,47 @@ async def incident_card(request: Request, vehicle_id: str) -> dict[str, Any]:
     if not inc:
         raise HTTPException(404, "Инцидент не найден")
     return inc.to_dict()
+
+
+class MessageIn(BaseModel):
+    vehicle_id: str
+    text: str = Field(..., min_length=1, max_length=500)
+
+
+@router.post("/messages", tags=["dispatcher"])
+async def send_message(request: Request, body: MessageIn) -> dict[str, Any]:
+    """Диспетчер → водитель: сообщение о задержке / рекомендации."""
+    state = request.app.state.state
+    if body.vehicle_id not in state.vehicles and body.vehicle_id not in state.incidents:
+        # всё равно принимаем — ТС может появиться
+        pass
+    msg = state.add_message(body.vehicle_id, body.text.strip())
+    await state.broadcast()
+    return {"ok": True, "message": msg.to_dict()}
+
+
+@router.get("/messages/{vehicle_id}", tags=["dispatcher"])
+async def list_messages(request: Request, vehicle_id: str) -> list[dict[str, Any]]:
+    return [m.to_dict() for m in request.app.state.state.messages.get(vehicle_id, [])]
+
+
+@router.get("/driver/{vehicle_id}", tags=["driver"])
+async def driver_view(request: Request, vehicle_id: str) -> dict[str, Any]:
+    """Упрощённый вид для водителя: задержка, скорость, inbox."""
+    state = request.app.state.state
+    v = state.vehicles.get(vehicle_id)
+    if not v:
+        raise HTTPException(404, "ТС не найдено")
+    return {
+        "vehicle_id": vehicle_id,
+        "route_id": v.route_id,
+        "status": v.status,
+        "current_delay_sec": v.current_delay_sec,
+        "predicted_delay_sec": v.predicted_delay_sec,
+        "suggested_speed_kmh": v.suggested_speed_kmh,
+        "speed_kmh": v.speed_kmh,
+        "risk_level": v.risk_level,
+        "segment_name": v.segment_name,
+        "messages": [m.to_dict() for m in state.messages.get(vehicle_id, [])[-20:]],
+        "model": v.model,
+    }

@@ -1,8 +1,8 @@
 """
 ML-ядро MosTrans Predict.
 
-Ансамбль: CatBoost (табличные признаки) + PyTorch LSTM (последовательности телеметрии).
-Горизонт прогноза: 600–900 секунд (10–15 минут).
+Основная модель: delay_catboost_ds.cbm (та же, что submission.csv).
+Доп.: PyTorch LSTM для вероятностного сигнала / fallback.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from typing import Any
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
+from feature_schema import FEATURE_COLS, MODEL_ID
 from models.ensemble import EnsemblePredictor
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -27,14 +28,17 @@ predictor: EnsemblePredictor | None = None
 async def lifespan(app: FastAPI):
     global predictor
     predictor = EnsemblePredictor.load_or_bootstrap()
-    logger.info("ML ensemble ready: %s", predictor.describe())
+    logger.info("ML ready: %s", predictor.describe())
     yield
 
 
 app = FastAPI(
     title="MosTrans ML Core",
-    description="Инференс ансамбля CatBoost + PyTorch для прогноза задержки 10–15 мин",
-    version="1.0.0",
+    description=(
+        f"Инференс {MODEL_ID}: тот же CatBoost, что формирует submission.csv. "
+        "Признаки FEATURE_COLS, горизонт 10–15 мин."
+    ),
+    version="1.1.0",
     lifespan=lifespan,
     docs_url="/docs",
     openapi_url="/openapi.json",
@@ -42,7 +46,10 @@ app = FastAPI(
 
 
 class PredictIn(BaseModel):
-    features: dict[str, Any]
+    features: dict[str, Any] = Field(
+        ...,
+        description="Вектор признаков FEATURE_COLS для parity с сабмитом",
+    )
     seq_speeds: list[float] = Field(default_factory=list)
     seq_delays: list[float] = Field(default_factory=list)
     horizon_sec: int = 780
@@ -62,13 +69,22 @@ class PredictOut(BaseModel):
 
 @app.get("/healthz")
 async def healthz():
-    return {"status": "ok", "ready": predictor is not None}
+    return {
+        "status": "ok",
+        "ready": predictor is not None,
+        "model": predictor.primary if predictor else None,
+    }
 
 
 @app.get("/info")
 async def info():
     assert predictor is not None
     return predictor.describe()
+
+
+@app.get("/feature_cols")
+async def feature_cols():
+    return {"model": MODEL_ID, "cols": FEATURE_COLS}
 
 
 @app.post("/predict", response_model=PredictOut)
@@ -81,8 +97,7 @@ async def predict(body: PredictIn) -> PredictOut:
         seq_delays=body.seq_delays,
         horizon_sec=body.horizon_sec,
     )
-    latency = (time.perf_counter() - t0) * 1000
-    result["latency_ms"] = round(latency, 2)
+    result["latency_ms"] = round((time.perf_counter() - t0) * 1000, 2)
     return PredictOut(**result)
 
 

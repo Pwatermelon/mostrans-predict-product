@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>МосТранс Предикт — диспетчерский пульт</title>
-  <meta name="description" content="Раннее прогнозирование задержек наземного транспорта Москвы за 10–15 минут" />
   <meta name="theme-color" content="#0B1F33" />
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -20,7 +19,7 @@
         <div class="brand-mark" aria-hidden="true"></div>
         <div>
           <div class="brand-name">МосТранс <span>Предикт</span></div>
-          <div class="brand-sub">горизонт 10–15 мин · NDTP · ансамбль ML</div>
+          <div class="brand-sub">горизонт 10–15 мин · <span id="model-id">delay_catboost_ds</span></div>
         </div>
       </div>
       <div class="status-cluster">
@@ -28,6 +27,7 @@
         <div class="stat"><label>Latency</label><strong id="lat-ms">—</strong></div>
         <div class="stat"><label>Кадры</label><strong id="frames-n">0</strong></div>
         <div class="stat"><label>Алерты</label><strong id="alerts-n">0</strong></div>
+        <a class="link-driver" href="/driver">Водитель →</a>
         <div class="clock" id="clock">--:--:--</div>
       </div>
     </header>
@@ -40,7 +40,14 @@
           <span><i class="lg yellow"></i>риск</span>
           <span><i class="lg red"></i>критично</span>
         </div>
-        <div class="map-hint">Карта маршрутной сети · положение ТС в реальном времени</div>
+        <div class="fleet-table-wrap">
+          <table class="fleet-table" id="fleet-table">
+            <thead>
+              <tr><th>ТС</th><th>Маршрут</th><th>Статус</th><th>Delay</th><th>Риск</th></tr>
+            </thead>
+            <tbody id="fleet-body"></tbody>
+          </table>
+        </div>
       </section>
 
       <aside class="side">
@@ -54,7 +61,7 @@
 
         <div class="panel whatif">
           <div class="panel-head"><h2>What-if</h2></div>
-          <p class="muted">Оценка выпуска дополнительного ТС на график маршрута</p>
+          <p class="muted">Оценка выпуска дополнительного ТС</p>
           <div class="whatif-row">
             <select id="wf-route"></select>
             <select id="wf-extra">
@@ -64,7 +71,7 @@
             </select>
             <button type="button" id="wf-run">Рассчитать</button>
           </div>
-          <div class="whatif-out" id="wf-out">Выберите маршрут и нажмите «Рассчитать»</div>
+          <div class="whatif-out" id="wf-out">Выберите маршрут</div>
         </div>
 
         <div class="panel routes-panel">

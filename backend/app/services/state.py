@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from fastapi import WebSocket
@@ -12,8 +11,6 @@ from fastapi import WebSocket
 
 @dataclass
 class Incident:
-    """Карточка инцидента для диспетчера."""
-
     vehicle_id: str
     route_id: str
     delay_prob: float
@@ -25,11 +22,14 @@ class Incident:
     segment_name: str
     lat: float
     lon: float
-    risk_level: str  # green | yellow | red
+    risk_level: str
     horizon_sec: int
     recommendation: str
     ts: float
-    alert_lead_sec: float  # сколько секунд до события (10–15 мин окно)
+    alert_lead_sec: float
+    suggested_speed_kmh: float = 20.0
+    status: str = "on_route"
+    model: str = "delay_catboost_ds"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -47,6 +47,23 @@ class VehicleState:
     delay_prob: float
     segment_name: str
     ts: float
+    status: str = "on_route"
+    suggested_speed_kmh: float = 20.0
+    predicted_delay_sec: float = 0.0
+    track: list[dict[str, float]] = field(default_factory=list)
+    model: str = "delay_catboost_ds"
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class DriverMessage:
+    id: str
+    vehicle_id: str
+    text: str
+    ts: float
+    from_dispatcher: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -60,7 +77,8 @@ class Metrics:
     last_predict_latency_ms: float = 0.0
     avg_predict_latency_ms: float = 0.0
     degraded: bool = False
-    mode: str = "live"  # live | degraded | historical
+    mode: str = "live"
+    ml_model: str = "delay_catboost_ds"
     uptime_start: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict[str, Any]:
@@ -70,16 +88,16 @@ class Metrics:
 
 
 class AppState:
-    """In-memory state для дашборда и API."""
-
     def __init__(self) -> None:
         self.vehicles: dict[str, VehicleState] = {}
         self.incidents: dict[str, Incident] = {}
         self.routes: dict[str, dict[str, Any]] = {}
+        self.messages: dict[str, list[DriverMessage]] = {}
         self.metrics = Metrics()
         self.ws_clients: set[WebSocket] = set()
         self._lat_sum = 0.0
         self._lat_n = 0
+        self._msg_seq = 0
 
     def upsert_vehicle(self, v: VehicleState) -> None:
         self.vehicles[v.vehicle_id] = v
@@ -90,12 +108,27 @@ class AppState:
         else:
             self.incidents[inc.vehicle_id] = inc
 
-    def record_latency(self, ms: float) -> None:
+    def add_message(self, vehicle_id: str, text: str) -> DriverMessage:
+        self._msg_seq += 1
+        msg = DriverMessage(
+            id=f"m{self._msg_seq}",
+            vehicle_id=vehicle_id,
+            text=text,
+            ts=time.time(),
+        )
+        self.messages.setdefault(vehicle_id, []).append(msg)
+        # keep last 50
+        self.messages[vehicle_id] = self.messages[vehicle_id][-50:]
+        return msg
+
+    def record_latency(self, ms: float, model: str | None = None) -> None:
         self.metrics.last_predict_latency_ms = ms
         self._lat_sum += ms
         self._lat_n += 1
         self.metrics.avg_predict_latency_ms = self._lat_sum / self._lat_n
         self.metrics.predicts_total += 1
+        if model:
+            self.metrics.ml_model = model
 
     def snapshot(self) -> dict[str, Any]:
         return {
@@ -107,6 +140,10 @@ class AppState:
                 key=lambda x: -x["delay_prob"],
             ),
             "routes": list(self.routes.values()),
+            "messages": {
+                vid: [m.to_dict() for m in msgs[-10:]]
+                for vid, msgs in self.messages.items()
+            },
             "metrics": self.metrics.to_dict(),
         }
 

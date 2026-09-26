@@ -1,40 +1,29 @@
-# Производительность и доп. возможности
+# Производительность и честность DS
+
+## Потоковая ML = сабмит
+
+- Модель сабмита: `delay_catboost_ds.cbm` (`MODEL_ID=delay_catboost_ds`).
+- Онлайн: backend собирает `FEATURE_COLS` → `POST ml:8001/predict` → та же `.cbm`.
+- LSTM — только дополнительный сигнал вероятности / fallback, **не** источник `submission.csv`.
+- Проверка: `scripts/verify_stream_parity.py` (max |offline−online| &lt; 0.05 с).
 
 ## Latency
 
-- Ориентир инференса ансамбля: **&lt; 50–150 мс** на ТС (CPU), цель потока **&lt; 1–2 с**.
-- Метрики в рантайме: `GET /api/v1/metrics` → `last_predict_latency_ms`, `avg_predict_latency_ms`.
-- На дашборде latency отображается в шапке.
+- Ориентир инференса CatBoost DS: **&lt; 20 мс** на точку (CPU).
+- Метрики: `GET /api/v1/metrics` → `last_predict_latency_ms`, `ml_model`.
 
-## Пропускная способность
+## Пропускная способность и надёжность
 
-- Очередь кадров ограничена (backpressure), эмулятор ≈ 12 ТС × 1 Гц.
-- Backend обрабатывает кадры асинхронно, WebSocket пушит снимок без накопления UI-очереди.
+- Очередь кадров с backpressure; эмулятор ≈ 12 ТС × 1 Гц.
+- TCP-реконнект; degraded → historical replay; heuristic если ML недоступен.
 
-## Надёжность
-
-- TCP-реконнект к эмулятору с backoff.
-- При обрыве: режим `degraded` → replay последнего `sample_telemetry.jsonl` (`historical`).
-- Heuristic fallback, если ML недоступен (сервис не падает).
-
-## Холодный старт Docker
-
-1. `ml` — pip + bootstrap моделей (~1–2 мин первый раз).
-2. `backend` ждёт healthy ML.
-3. `gateway` проксирует на backend.
-
-## Дополнительные возможности (реализовано)
+## Доп. возможности
 
 | Фича | Где |
 |------|-----|
-| Map matching (haversine → сегмент маршрута) | `backend/app/features/engine.py` |
-| What-if анализ (+N ТС) | `POST /api/v1/what-if` + панель дашборда |
-| Ансамбль CatBoost + PyTorch LSTM | `ml/models/ensemble.py` |
-| ONNX-экспорт LSTM | `ml/train.py` → `artifacts/delay_lstm.onnx` |
-| Паттерны сбоя + рекомендации | карточка инцидента |
-| OpenAPI / Swagger | `/docs` |
-| Деплой как mail-eco (GHCR + Caddy + SSH) | `.github/workflows/deploy.yml` |
-
-## GPU
-
-- При наличии CUDA PyTorch автоматически использует GPU (`device=cuda` в `/info` ML).
+| Map matching | `backend/app/features/engine.py` |
+| What-if | `POST /api/v1/what-if` |
+| Сообщения Д→В | `POST /api/v1/messages`, `/driver` |
+| Статусы / трек / таблица | дашборд |
+| ONNX LSTM (aux) | `ml/artifacts` |
+| Деплой GHCR | `.github/workflows/deploy.yml` |

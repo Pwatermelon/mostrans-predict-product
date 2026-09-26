@@ -197,7 +197,19 @@ jobs:
       - name: Prepare remote compose
         run: |
           PATH_DIR="${DEPLOY_PATH:-/opt/mostrans-predict}"
-          ssh deploy-target "mkdir -p '$PATH_DIR' && (command -v docker >/dev/null || curl -fsSL https://get.docker.com | sh)"
+          ssh deploy-target bash -s <<REMOTE
+          set -e
+          if mkdir -p '$PATH_DIR' 2>/dev/null; then
+            true
+          elif command -v sudo >/dev/null; then
+            sudo mkdir -p '$PATH_DIR'
+            sudo chown -R "\$(whoami):\$(whoami)" '$PATH_DIR'
+          else
+            echo "Cannot create $PATH_DIR — set DEPLOY_USER=root or DEPLOY_PATH=\$HOME/mostrans-predict"
+            exit 1
+          fi
+          command -v docker >/dev/null || curl -fsSL https://get.docker.com | sh
+          REMOTE
           scp deploy/docker-compose.yml deploy-target:"$PATH_DIR/docker-compose.yml"
           {
             echo "IMAGE_PREFIX=${IMAGE_PREFIX}"

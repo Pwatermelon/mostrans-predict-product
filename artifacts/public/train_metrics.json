@@ -3,6 +3,7 @@
   "test_mae_cur_dev_baseline": 93.36,
   "mae_zero_test": 103.34,
   "improvement_sec": 40.07,
-  "score_est_vs_target40": 0.79,
-  "note": "Holdout = labels_test. Final submission model trained on train+test. Baseline cur_dev ~platform 0.40."
+  "primary_model": "delay_catboost_ds",
+  "stream_parity": "POST /predict uses same delay_catboost_ds.cbm as submission.csv",
+  "note": "Holdout MAE on labels_test before final fit on train+test for submission."
 }

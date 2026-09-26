@@ -32,6 +32,10 @@
 		reverse_proxy backend:8000
 	}
 
+	handle /driver* {
+		reverse_proxy backend:8000
+	}
+
 	handle /landing* {
 		root * /srv
 		file_server

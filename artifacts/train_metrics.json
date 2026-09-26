@@ -1,8 +1,7 @@
 {
-  "test_mae_holdout": 53.29,
-  "test_mae_cur_dev_baseline": 93.36,
-  "mae_zero_test": 103.34,
-  "improvement_sec": 40.07,
-  "score_est_vs_target40": 0.79,
-  "note": "Holdout = labels_test. Final submission model trained on train+test. Baseline cur_dev ~platform 0.40."
+  "test_mae": 33.68559128190765,
+  "mae_zero_test": 103.33711048158641,
+  "score_est": 1.0,
+  "best_iter": 1492,
+  "n_train_full": 4787
 }

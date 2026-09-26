@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>МосТранс — кабинет водителя</title>
+  <meta name="theme-color" content="#0B1F33" />
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Manrope:wght@500;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #071421; --text: #e8eef5; --muted: #8fa3b8;
+      --red: #e31e24; --amber: #f5a623; --green: #1fa97a; --cyan: #3db8c5;
+      --font: Manrope, system-ui, sans-serif; --mono: "JetBrains Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100dvh; font-family: var(--font); color: var(--text);
+      background: linear-gradient(165deg, #051018, var(--bg) 50%, #0a1a2c);
+      padding: 16px;
+    }
+    h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.03em; }
+    .sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+    .pick { display: flex; gap: 8px; margin-bottom: 16px; }
+    select, button {
+      flex: 1; font: 600 14px var(--font); padding: 12px;
+      border-radius: 10px; border: 1px solid rgba(255,255,255,.1);
+      background: #102538; color: var(--text);
+    }
+    button.primary { background: linear-gradient(180deg,#e53a3f,var(--red)); border: 0; }
+    .card {
+      background: rgba(14,36,56,.92); border: 1px solid rgba(255,255,255,.08);
+      border-radius: 14px; padding: 16px; margin-bottom: 12px;
+    }
+    .big { font-family: var(--mono); font-size: 36px; font-weight: 600; letter-spacing: -0.04em; }
+    .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .risk-green { color: var(--green); }
+    .risk-yellow { color: var(--amber); }
+    .risk-red { color: var(--red); }
+    .inbox { display: flex; flex-direction: column; gap: 8px; }
+    .msg {
+      padding: 10px 12px; border-radius: 10px;
+      background: rgba(61,184,197,.1); border: 1px solid rgba(61,184,197,.3);
+      font-size: 14px; line-height: 1.4;
+    }
+    .msg time { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    a.back { color: var(--cyan); font-size: 13px; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <a class="back" href="/">← Пульт диспетчера</a>
+  <h1 style="margin-top:12px">Кабинет водителя</h1>
+  <p class="sub">Задержка, рекомендуемая скорость, сообщения диспетчера</p>
+
+  <div class="pick">
+    <select id="vid"></select>
+    <button type="button" class="primary" id="load">Открыть</button>
+  </div>
+
+  <div id="panel" hidden>
+    <div class="card">
+      <div class="label">Прогноз опоздания</div>
+      <div class="big" id="delay">—</div>
+      <div class="sub" id="meta"></div>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <div class="label">Реком. скорость</div>
+        <div class="big" style="font-size:28px" id="sug">—</div>
+      </div>
+      <div class="card">
+        <div class="label">Сейчас</div>
+        <div class="big" style="font-size:28px" id="spd">—</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="label">Сообщения диспетчера</div>
+      <div class="inbox" id="inbox"><div class="sub">Пока пусто</div></div>
+    </div>
+  </div>
+
+  <script>
+    const STATUS = { on_route: "в пути", at_stop: "на остановке", break: "обед / простой" };
+    function fmt(s) {
+      const n = Math.round(Number(s) || 0);
+      if (Math.abs(n) < 60) return n + " с";
+      return Math.floor(Math.abs(n) / 60) + " мин " + (Math.abs(n) % 60) + " с";
+    }
+    async function refreshList() {
+      const r = await fetch("/api/v1/vehicles");
+      const vs = await r.json();
+      const sel = document.getElementById("vid");
+      const cur = sel.value;
+      sel.innerHTML = vs.map((v) => `<option value="${v.vehicle_id}">${v.vehicle_id} · ${v.route_id}</option>`).join("");
+      if (cur) sel.value = cur;
+      const q = new URLSearchParams(location.search).get("v");
+      if (q) { sel.value = q; load(); }
+    }
+    async function load() {
+      const id = document.getElementById("vid").value;
+      if (!id) return;
+      history.replaceState(null, "", "/driver?v=" + encodeURIComponent(id));
+      const r = await fetch("/api/v1/driver/" + encodeURIComponent(id));
+      if (!r.ok) return;
+      const d = await r.json();
+      document.getElementById("panel").hidden = false;
+      document.getElementById("delay").textContent = fmt(d.predicted_delay_sec);
+      document.getElementById("delay").className = "big risk-" + (d.risk_level || "green");
+      document.getElementById("sug").textContent = Math.round(d.suggested_speed_kmh) + " км/ч";
+      document.getElementById("spd").textContent = Math.round(d.speed_kmh) + " км/ч";
+      document.getElementById("meta").textContent =
+        `${d.route_id} · ${STATUS[d.status] || d.status} · ${d.segment_name || ""} · модель ${d.model}`;
+      const box = document.getElementById("inbox");
+      if (!d.messages || !d.messages.length) {
+        box.innerHTML = '<div class="sub">Сообщений нет</div>';
+      } else {
+        box.innerHTML = d.messages.slice().reverse().map((m) =>
+          `<div class="msg"><time>${new Date(m.ts * 1000).toLocaleTimeString("ru-RU")}</time>${m.text}</div>`
+        ).join("");
+      }
+    }
+    document.getElementById("load").onclick = load;
+    refreshList();
+    setInterval(() => { if (!document.getElementById("panel").hidden) load(); }, 5000);
+    setInterval(refreshList, 15000);
+  </script>
+</body>
+</html>

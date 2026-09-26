@@ -11,6 +11,7 @@ from pathlib import Path
 import httpx
 
 from app.config import settings
+from app.features.ds_schema import suggested_speed_kmh, vehicle_status
 from app.features.engine import FeatureEngine, RouteSegment, VehicleFeatures
 from app.ndtp.parser import NDTPFrame, parse_json_line
 from app.services.state import AppState, Incident, VehicleState
@@ -49,7 +50,7 @@ def infer_pattern(feat: VehicleFeatures) -> tuple[str, str]:
     return "normal", CAUSE_MAP["normal"]
 
 
-def recommendation(pattern: str, risk: str) -> str:
+def recommendation(pattern: str, risk: str, suggested_speed: float | None = None) -> str:
     if risk == "green":
         return "Контроль по расписанию, действий не требуется"
     tips = {
@@ -60,7 +61,10 @@ def recommendation(pattern: str, risk: str) -> str:
         "schedule_drift": "Скорректировать интервал; what-if: доп. ТС",
         "normal": "Наблюдение; перепроверить через 2–3 мин",
     }
-    return tips.get(pattern, tips["normal"])
+    base = tips.get(pattern, tips["normal"])
+    if suggested_speed and risk != "green":
+        base += f" · рекоменд. ср. скорость ≈ {suggested_speed:.0f} км/ч"
+    return base
 
 
 class Orchestrator:
@@ -232,21 +236,22 @@ class Orchestrator:
         t0 = time.perf_counter()
         pred = await self._call_ml(feat)
         latency_ms = (time.perf_counter() - t0) * 1000
-        self.state.record_latency(latency_ms)
+        model_id = str(pred.get("model", "delay_catboost_ds"))
+        self.state.record_latency(latency_ms, model=model_id)
 
         pattern, cause = infer_pattern(feat)
-        # если ML вернул pattern — используем
         if pred.get("pattern") and pred["pattern"] != "normal":
             pattern = pred["pattern"]
             cause = CAUSE_MAP.get(pattern, pred.get("cause", cause))
 
         prob = float(pred.get("delay_prob", 0.0))
-        delay = float(pred.get("predicted_delay_sec", max(0.0, feat.current_delay_sec)))
+        delay = float(pred.get("predicted_delay_sec", feat.current_delay_sec))
         abs_err = float(pred.get("abs_error_sec", abs(delay - feat.current_delay_sec)))
         risk = risk_level(prob, delay)
         horizon = int(pred.get("horizon_sec", settings.predict_horizon_sec))
-        # алерт только в окне 10–15 мин (не «задним числом»)
         alert_lead = float(horizon)
+        status = vehicle_status(feat.speed_kmh, feat.dwell_sec, feat.doors_open)
+        sug = suggested_speed_kmh(feat.dist_to_segment_m, float(horizon), feat.current_delay_sec)
 
         self.state.upsert_vehicle(
             VehicleState(
@@ -260,6 +265,11 @@ class Orchestrator:
                 delay_prob=prob,
                 segment_name=feat.matched_segment_name,
                 ts=feat.ts,
+                status=status,
+                suggested_speed_kmh=sug,
+                predicted_delay_sec=delay,
+                track=feat.track,
+                model=model_id,
             )
         )
 
@@ -277,9 +287,12 @@ class Orchestrator:
             lon=feat.lon,
             risk_level=risk,
             horizon_sec=horizon,
-            recommendation=recommendation(pattern, risk),
+            recommendation=recommendation(pattern, risk, sug),
             ts=time.time(),
             alert_lead_sec=alert_lead,
+            suggested_speed_kmh=sug,
+            status=status,
+            model=model_id,
         )
         self.state.upsert_incident(inc)
         self._update_route_risk(feat.route_id)
@@ -299,8 +312,9 @@ class Orchestrator:
         route["risk_level"] = risk_level(max_p, 0)
 
     async def _call_ml(self, feat: VehicleFeatures) -> dict:
+        ds = feat.ds_features(horizon_sec=float(settings.predict_horizon_sec))
         payload = {
-            "features": feat.tabular(),
+            "features": ds,
             "seq_speeds": feat.seq_speeds,
             "seq_delays": feat.seq_delays,
             "horizon_sec": settings.predict_horizon_sec,

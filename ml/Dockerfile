@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 COPY ml/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt pandas pyarrow
 
+COPY ml/feature_schema.py /app/feature_schema.py
 COPY ml/models /app/models
 COPY ml/serve.py /app/serve.py
 COPY ml/train.py /app/train.py

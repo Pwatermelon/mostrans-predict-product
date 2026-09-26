@@ -94,6 +94,16 @@ async def root():
     }
 
 
+@app.get("/driver", tags=["meta"])
+@app.get("/driver/", tags=["meta"])
+async def driver_page():
+    """Мобильный вид водителя."""
+    path = DASHBOARD_DIR / "driver.html"
+    if path.exists():
+        return FileResponse(path)
+    return {"error": "driver.html not found"}
+
+
 @app.get("/healthz", tags=["meta"])
 async def healthz():
     """Healthcheck для Docker/Caddy."""

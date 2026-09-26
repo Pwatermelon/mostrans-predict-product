@@ -25,4 +25,28 @@
 | `DEPLOY_PATH` | `/opt/mostrans-predict` |
 | `SSH_PORT` | `22` |
 
+## Если `mkdir: Permission denied`
+
+Пользователь из `DEPLOY_USER` не может писать в `/opt`. Варианты:
+
+**1. Зайти под root (предпочтительно)** — в secrets:
+```text
+DEPLOY_USER=root
+DEPLOY_PATH=/opt/mostrans-predict
+```
+
+**2. Один раз создать папку на сервере:**
+```bash
+ssh root@ВАШ_IP
+sudo mkdir -p /opt/mostrans-predict
+sudo chown -R ВАШ_ЮЗЕР:ВАШ_ЮЗЕР /opt/mostrans-predict
+# если docker требует прав:
+sudo usermod -aG docker ВАШ_ЮЗЕР
+```
+
+**3. Класть в home (без sudo):**
+```text
+DEPLOY_PATH=/home/ВАШ_ЮЗЕР/mostrans-predict
+```
+
 Локально без деплоя: `docker compose up --build` в корне репозитория.

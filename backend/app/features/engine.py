@@ -55,6 +55,8 @@ class VehicleFeatures:
     ts: float
     seq_speeds: list[float] = field(default_factory=list)
     seq_delays: list[float] = field(default_factory=list)
+    doors_open: bool = False
+    track: list[dict[str, float]] = field(default_factory=list)
 
     def tabular(self) -> dict[str, float | str]:
         return {
@@ -71,6 +73,21 @@ class VehicleFeatures:
             "matched_segment_id": self.matched_segment_id,
         }
 
+    def ds_features(self, horizon_sec: float = 780.0) -> dict[str, float]:
+        """Вектор FEATURE_COLS для delay_catboost_ds (parity с сабмитом)."""
+        from app.features.ds_schema import online_to_ds_features
+
+        return online_to_ds_features(
+            current_delay_sec=self.current_delay_sec,
+            horizon_sec=horizon_sec,
+            ts=self.ts,
+            speeds=self.seq_speeds,
+            dist_to_stop_m=self.dist_to_segment_m,
+            progress_ratio=self.progress_ratio,
+            hist_delays=self.seq_delays,
+            stops_before=max(1.0, (1.0 - self.progress_ratio) * 8),
+        )
+
 
 class FeatureEngine:
     """Онлайн-расчёт признаков + простой map matching."""
@@ -82,6 +99,9 @@ class FeatureEngine:
             self.by_route[s.route_id].append(s)
         self.history: dict[str, Deque[NDTPFrame]] = defaultdict(
             lambda: deque(maxlen=history_len)
+        )
+        self.track: dict[str, Deque[dict[str, float]]] = defaultdict(
+            lambda: deque(maxlen=40)
         )
         self.dwell_start: dict[str, float | None] = defaultdict(lambda: None)
         self.schedule_offset: dict[str, float] = defaultdict(float)
@@ -102,6 +122,9 @@ class FeatureEngine:
         """Обновляет историю ТС и возвращает вектор признаков."""
         hist = self.history[frame.vehicle_id]
         hist.append(frame)
+        self.track[frame.vehicle_id].append(
+            {"lat": frame.lat, "lon": frame.lon, "ts": frame.ts, "speed": frame.speed_kmh}
+        )
 
         # dwell: скорость < 3 км/ч или двери открыты
         if frame.speed_kmh < 3.0 or frame.doors_open:
@@ -161,4 +184,6 @@ class FeatureEngine:
             ts=frame.ts,
             seq_speeds=speeds[-16:],
             seq_delays=delays[-16:],
+            doors_open=frame.doors_open,
+            track=list(self.track[frame.vehicle_id]),
         )

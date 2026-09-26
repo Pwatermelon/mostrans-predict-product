@@ -1,22 +1,20 @@
-/* MosTrans Predict — dispatcher BI dashboard */
+/* MosTrans Predict — dispatcher BI */
 
 const RISK_COLOR = { green: "#1FA97A", yellow: "#F5A623", red: "#E31E24" };
+const STATUS_RU = { on_route: "в пути", at_stop: "остановка", break: "обед/простой" };
 
 const state = {
   vehicles: [],
   incidents: [],
   routes: [],
+  messages: {},
   metrics: {},
   markers: new Map(),
+  tracks: new Map(),
   routeLayers: [],
-  selected: null,
 };
 
-const map = L.map("map", {
-  zoomControl: true,
-  attributionControl: false,
-}).setView([55.76, 37.58], 12);
-
+const map = L.map("map", { zoomControl: true, attributionControl: false }).setView([55.76, 37.58], 12);
 L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
   maxZoom: 19,
   subdomains: "abcd",
@@ -62,6 +60,7 @@ function updateStatus(metrics) {
       : "—";
   el("frames-n").textContent = metrics.frames_total ?? 0;
   el("alerts-n").textContent = state.incidents.filter((i) => i.risk_level !== "green").length;
+  if (metrics.ml_model) el("model-id").textContent = metrics.ml_model;
 }
 
 function drawRoutes(routes) {
@@ -74,12 +73,7 @@ function drawRoutes(routes) {
     const pts = (r.points || []).map((p) => [p.lat, p.lon]);
     if (pts.length >= 2) {
       const color = RISK_COLOR[r.risk_level] || "#3DB8C5";
-      const layer = L.polyline(pts, {
-        color,
-        weight: 4,
-        opacity: 0.75,
-        lineCap: "round",
-      }).addTo(map);
+      const layer = L.polyline(pts, { color, weight: 4, opacity: 0.55, lineCap: "round" }).addTo(map);
       layer.bindTooltip(r.name || r.route_id);
       state.routeLayers.push(layer);
     }
@@ -90,8 +84,7 @@ function drawRoutes(routes) {
   });
   if (prev) sel.value = prev;
 
-  const box = el("routes");
-  box.innerHTML = routes
+  el("routes").innerHTML = routes
     .map((r) => {
       const c = RISK_COLOR[r.risk_level] || "#8fa3b8";
       return `<div class="route">
@@ -127,16 +120,57 @@ function upsertMarkers(vehicles) {
       m.setIcon(vehicleIcon(v.risk_level));
     }
     m.bindTooltip(
-      `<b>${v.vehicle_id}</b><br>${v.route_id} · ${pct(v.delay_prob)} · ${fmtSec(v.current_delay_sec)}`,
+      `<b>${v.vehicle_id}</b><br>${STATUS_RU[v.status] || v.status} · ${pct(v.delay_prob)} · ${fmtSec(v.current_delay_sec)}`,
       { direction: "top" }
     );
+
+    // track polyline
+    const trackPts = (v.track || []).map((p) => [p.lat, p.lon]);
+    let tr = state.tracks.get(v.vehicle_id);
+    if (trackPts.length >= 2) {
+      if (!tr) {
+        tr = L.polyline(trackPts, {
+          color: RISK_COLOR[v.risk_level] || "#3DB8C5",
+          weight: 3,
+          opacity: 0.85,
+        }).addTo(map);
+        state.tracks.set(v.vehicle_id, tr);
+      } else {
+        tr.setLatLngs(trackPts);
+        tr.setStyle({ color: RISK_COLOR[v.risk_level] || "#3DB8C5" });
+      }
+    }
   });
   for (const [id, m] of state.markers) {
     if (!seen.has(id)) {
       map.removeLayer(m);
       state.markers.delete(id);
+      const tr = state.tracks.get(id);
+      if (tr) {
+        map.removeLayer(tr);
+        state.tracks.delete(id);
+      }
     }
   }
+}
+
+function renderFleet(vehicles) {
+  const body = el("fleet-body");
+  const sorted = [...vehicles].sort((a, b) => (b.delay_prob || 0) - (a.delay_prob || 0));
+  body.innerHTML = sorted
+    .map(
+      (v) => `<tr data-id="${v.vehicle_id}">
+      <td>${v.vehicle_id}</td>
+      <td>${v.route_id}</td>
+      <td class="st ${v.status || ""}">${STATUS_RU[v.status] || v.status || "—"}</td>
+      <td>${fmtSec(v.predicted_delay_sec || v.current_delay_sec)}</td>
+      <td style="color:${RISK_COLOR[v.risk_level] || "#fff"}">${pct(v.delay_prob)}</td>
+    </tr>`
+    )
+    .join("");
+  body.querySelectorAll("tr").forEach((tr) => {
+    tr.addEventListener("click", () => openIncident(tr.dataset.id));
+  });
 }
 
 function renderIncidents(incidents) {
@@ -144,7 +178,7 @@ function renderIncidents(incidents) {
   el("inc-badge").textContent = String(list.length);
   const box = el("incidents");
   if (!list.length) {
-    box.innerHTML = `<div class="empty">Критических отклонений нет — график стабилен</div>`;
+    box.innerHTML = `<div class="empty">Критических отклонений нет</div>`;
     return;
   }
   box.innerHTML = list
@@ -154,7 +188,7 @@ function renderIncidents(incidents) {
         <span class="inc-id">${i.vehicle_id}</span>
         <span class="inc-prob">${pct(i.delay_prob)}</span>
       </div>
-      <div class="inc-meta">${i.route_id} · ${i.segment_name} · горизонт ${Math.round(i.horizon_sec / 60)} мин · опоздание ${fmtSec(i.predicted_delay_sec)}</div>
+      <div class="inc-meta">${i.route_id} · ${STATUS_RU[i.status] || ""} · ${i.segment_name} · ${fmtSec(i.predicted_delay_sec)}</div>
       <div class="inc-cause">${i.cause}</div>
     </button>`
     )
@@ -164,7 +198,7 @@ function renderIncidents(incidents) {
   });
 }
 
-function openIncident(vehicleId) {
+async function openIncident(vehicleId) {
   const inc = state.incidents.find((i) => i.vehicle_id === vehicleId);
   const v = state.vehicles.find((x) => x.vehicle_id === vehicleId);
   const drawer = el("drawer");
@@ -174,7 +208,7 @@ function openIncident(vehicleId) {
     vehicle_id: v.vehicle_id,
     route_id: v.route_id,
     delay_prob: v.delay_prob,
-    predicted_delay_sec: v.current_delay_sec,
+    predicted_delay_sec: v.predicted_delay_sec || v.current_delay_sec,
     abs_error_sec: 0,
     cause: "Нет активного алерта",
     segment_name: v.segment_name,
@@ -182,20 +216,34 @@ function openIncident(vehicleId) {
     recommendation: "Наблюдение",
     risk_level: v.risk_level,
     alert_lead_sec: 780,
+    suggested_speed_kmh: v.suggested_speed_kmh,
+    status: v.status,
+    model: v.model,
   };
   if (v) map.panTo([v.lat, v.lon], { animate: true });
+  const msgs = (state.messages[vehicleId] || []).slice(-5);
   card.innerHTML = `
     <h3>${data.vehicle_id}</h3>
-    <div class="sub">${data.route_id} · участок «${data.segment_name || "—"}» · риск ${data.risk_level}</div>
+    <div class="sub">${data.route_id} · ${STATUS_RU[data.status] || data.status || ""} · «${data.segment_name || "—"}» · модель ${data.model || "delay_catboost_ds"}</div>
     <div class="grid2">
       <div class="kv"><label>Вероятность задержки</label><strong>${pct(data.delay_prob)}</strong></div>
       <div class="kv"><label>Прогноз опоздания</label><strong>${fmtSec(data.predicted_delay_sec)}</strong></div>
-      <div class="kv"><label>Горизонт алерта</label><strong>${Math.round((data.alert_lead_sec || data.horizon_sec) / 60)} мин</strong></div>
-      <div class="kv"><label>|ошибка| оценки</label><strong>${fmtSec(data.abs_error_sec)}</strong></div>
+      <div class="kv"><label>Горизонт</label><strong>${Math.round((data.alert_lead_sec || data.horizon_sec) / 60)} мин</strong></div>
+      <div class="kv"><label>Реком. скорость</label><strong>${Math.round(data.suggested_speed_kmh || 20)} км/ч</strong></div>
     </div>
-    <p style="margin:0 0 8px;font-size:13px;color:var(--muted)">Причина / паттерн</p>
+    <p style="margin:0 0 8px;font-size:13px;color:var(--muted)">Причина</p>
     <p style="margin:0 0 12px;font-size:14px">${data.cause}</p>
     <div class="rec"><b>Рекомендация:</b> ${data.recommendation}</div>
+    <div class="msg-box">
+      <label style="font-size:12px;color:var(--muted)">Сообщение водителю</label>
+      <textarea id="msg-text" placeholder="Вы опаздываете на ~N мин. Рекомендуем скорость …"></textarea>
+      <button type="button" id="msg-send">Отправить водителю</button>
+      <div class="msg-list" id="msg-list">${
+        msgs.length
+          ? msgs.map((m) => `<div>${new Date(m.ts * 1000).toLocaleTimeString("ru-RU")} — ${m.text}</div>`).join("")
+          : "Сообщений пока нет"
+      }</div>
+    </div>
     <button type="button" class="close-btn" id="drawer-close">Закрыть</button>
   `;
   drawer.hidden = false;
@@ -205,6 +253,19 @@ function openIncident(vehicleId) {
   drawer.onclick = (e) => {
     if (e.target === drawer) drawer.hidden = true;
   };
+  el("msg-send").onclick = async () => {
+    let text = el("msg-text").value.trim();
+    if (!text) {
+      const delay = Math.round((data.predicted_delay_sec || 0) / 60);
+      text = `Внимание: прогноз опоздания ~${delay} мин. Рекомендуемая ср. скорость ${Math.round(data.suggested_speed_kmh || 20)} км/ч.`;
+    }
+    await fetch("/api/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vehicle_id: vehicleId, text }),
+    });
+    el("msg-text").value = "";
+  };
 }
 
 function applySnapshot(msg) {
@@ -212,11 +273,13 @@ function applySnapshot(msg) {
   state.vehicles = msg.vehicles || [];
   state.incidents = msg.incidents || [];
   state.routes = msg.routes || [];
+  state.messages = msg.messages || {};
   state.metrics = msg.metrics || {};
   updateStatus(state.metrics);
   drawRoutes(state.routes);
   upsertMarkers(state.vehicles);
   renderIncidents(state.incidents);
+  renderFleet(state.vehicles);
 }
 
 async function pollFallback() {
@@ -246,7 +309,7 @@ el("wf-run").addEventListener("click", async () => {
   const route_id = el("wf-route").value;
   const extra_vehicles = Number(el("wf-extra").value);
   const out = el("wf-out");
-  out.textContent = "Считаем сценарий…";
+  out.textContent = "Считаем…";
   try {
     const r = await fetch("/api/v1/what-if", {
       method: "POST",
@@ -256,11 +319,10 @@ el("wf-run").addEventListener("click", async () => {
     const data = await r.json();
     out.innerHTML = `${data.recommendation || data.message}<br>
       <span style="font-family:var(--mono);font-size:12px;opacity:.85">
-      до: ${fmtSec(data.before_avg_delay_sec)} / риск ${pct(data.before_avg_risk)} →
-      после: ${fmtSec(data.after_avg_delay_sec)} / риск ${pct(data.after_avg_risk)}
+      до: ${fmtSec(data.before_avg_delay_sec)} → после: ${fmtSec(data.after_avg_delay_sec)}
       </span>`;
   } catch (e) {
-    out.textContent = "Ошибка what-if: " + e.message;
+    out.textContent = "Ошибка: " + e.message;
   }
 });
 
