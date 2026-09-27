@@ -15,8 +15,13 @@ const state = {
   selectedVehicle: "",
 };
 
-const map = L.map("map", { zoomControl: true, attributionControl: true }).setView([55.76, 37.58], 12);
-// Нейтральная подложка без политических баннеров/флагов OSM.org
+const map = L.map("map", {
+  zoomControl: true,
+  attributionControl: true,
+  minZoom: 10,
+  maxBoundsViscosity: 1.0,
+}).setView([55.76, 37.58], 11);
+
 L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
   {
@@ -24,6 +29,24 @@ L.tileLayer(
     attribution: "Esri",
   }
 ).addTo(map);
+
+/** Карта только в пределах Москвы — без уезда за город */
+async function clipMapToMoscow() {
+  try {
+    const r = await fetch("/static/moscow.geojson");
+    if (!r.ok) return;
+    const gj = await r.json();
+    const ringLonLat = gj.features[0].geometry.coordinates[0];
+    const ringLatLng = ringLonLat.map(([lon, lat]) => [lat, lon]);
+    const bounds = L.latLngBounds(ringLatLng);
+    map.setMaxBounds(bounds);
+    map.fitBounds(bounds.pad(-0.01));
+  } catch (_) {
+    const fallback = L.latLngBounds([55.55, 37.32], [55.95, 37.90]);
+    map.setMaxBounds(fallback);
+  }
+}
+clipMapToMoscow();
 
 function el(id) {
   return document.getElementById(id);
