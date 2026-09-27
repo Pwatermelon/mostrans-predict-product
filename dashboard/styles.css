@@ -509,6 +509,7 @@ button { cursor: pointer; }
 }
 .leaflet-container { font: 12px/1.4 var(--font); background: #dde3ea; }
 .leaflet-control-attribution { font-size: 9px !important; }
+.leaflet-attribution-flag { display: none !important; }
 .empty { color: var(--muted); font-size: 12px; padding: 10px 4px; text-align: center; }
 
 .wrap, .stats-wrap {

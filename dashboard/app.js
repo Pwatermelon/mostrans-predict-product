@@ -22,6 +22,11 @@ const map = L.map("map", {
   maxBoundsViscosity: 1.0,
 }).setView([55.76, 37.58], 11);
 
+// Leaflet 1.9+ рисует UA-флаг в prefix — убираем, оставляем только текст
+map.attributionControl.setPrefix(
+  '<a href="https://leafletjs.com" title="A JavaScript library for interactive maps">Leaflet</a>'
+);
+
 L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
   {
