@@ -370,10 +370,7 @@ el("wf-run").addEventListener("click", async () => {
   const user = await Auth.require("dispatcher");
   if (!user) return;
   if (el("user-name")) el("user-name").textContent = user.display_name || user.login;
-  if (el("logout-btn")) {
-    el("logout-btn").textContent = "Сменить роль";
-    el("logout-btn").onclick = () => Auth.switchRole();
-  }
+  if (el("logout-btn")) el("logout-btn").onclick = () => Auth.logout();
   connectWs();
   pollFallback();
   setInterval(pollFallback, 5000);

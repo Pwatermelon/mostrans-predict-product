@@ -1,33 +1,27 @@
-# Производительность и честность DS
-
-## Потоковая ML = сабмит
-
-- Модель сабмита: `delay_catboost_ds.cbm` (`MODEL_ID=delay_catboost_ds`).
-- Онлайн: backend собирает `FEATURE_COLS` → `POST ml:8001/predict` → та же `.cbm`.
-- LSTM — только дополнительный сигнал вероятности / fallback, **не** источник `submission.csv`.
-- Проверка: `scripts/verify_stream_parity.py` (max |offline−online| &lt; 0.05 с).
+# Производительность и доп. возможности
 
 ## Latency
 
-- Ориентир инференса CatBoost DS: **&lt; 20 мс** на точку (CPU).
-- Метрики: `GET /api/v1/metrics` → `last_predict_latency_ms`, `ml_model`.
+CatBoost на CPU обычно укладывается в десятки миллисекунд на один кадр (ориентир &lt; 20 мс на нашей машине). Смотреть live: `GET /api/v1/metrics` → `last_predict_latency_ms`, `ml_model`. На пульте latency тоже в шапке.
 
-## Пропускная способность и надёжность
+Поток: ~12 ТС × ~1 Гц с эмулятора. Backend держит очередь с backpressure; если ML тупит — heuristic, сервис не падает.
 
-- Очередь кадров с backpressure; эмулятор ≈ 12 ТС × 1 Гц.
-- TCP-реконнект; degraded → historical replay; heuristic если ML недоступен.
+## Надёжность
 
-## Доп. возможности
+Обрыв эмулятора (`docker compose stop emulator`) не роняет стек: режим degraded / historical replay по последнему состоянию. TCP к эмулятору переподключается сам.
 
-| Фича | Где |
-|------|-----|
-| Map matching | `backend/app/features/engine.py` |
-| What-if | `POST /api/v1/what-if` |
-| Сообщения Д→В | `POST /api/v1/messages`, `/driver` |
-| Авторизация | `/login` · `dispatcher`/`demo`, `driver-1000`…`/demo` |
-| Статистика маршрутов | `/stats` · день/неделя/месяц, A/B, остановки |
-| Панель загрузки данных | `/admin` · JSON/CSV/JSONL → поток |
-| Статусы / трек / таблица | дашборд |
-| Ансамбль CatBoost + LSTM | `ml/models/ensemble.py` |
-| ONNX LSTM (aux) | `ml/artifacts` |
-| Деплой GHCR | `.github/workflows/deploy.yml` |
+## Честность DS
+
+`submission.csv` и онлайн `/predict` — одна модель `delay_catboost_ds.cbm`. Признаки те же (`FEATURE_COLS`). LSTM только как доп. сигнал/fallback, в сабмит не пишется. Проверка: `scripts/verify_stream_parity.py`.
+
+## Что сделали сверх базы
+
+- Map matching координат на сегменты маршрута  
+- What-if: оценка выпуска доп. ТС на маршруте  
+- Сообщения диспетчер → водитель + кабинет `/driver`  
+- Логин (диспетчер / водитель своего ТС)  
+- Ситуационный отчёт `/stats`: очередь проблем, теплокарта суток, рейтинги  
+- Заливка истории JSON/CSV на `/admin`  
+- Статусы ТС (в пути / остановка / простой), треки, таблица флота  
+- Ансамбль CatBoost + LSTM, LSTM ещё в ONNX  
+- Деплой через GHCR + Caddy (как в workflow)

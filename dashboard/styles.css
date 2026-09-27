@@ -163,10 +163,16 @@ button { cursor: pointer; }
   align-items: center;
   letter-spacing: 0.02em;
 }
+.logout-link,
 #logout-btn.nav {
   border-left: 1px solid var(--line);
   height: 100%;
+  margin-left: 0;
+  flex-shrink: 0;
+  color: var(--muted);
 }
+.logout-link:hover,
+#logout-btn.nav:hover { color: var(--red); }
 
 .layout {
   display: grid;

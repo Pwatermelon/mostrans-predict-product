@@ -51,9 +51,10 @@
         <a class="nav" href="/">Пульт</a>
         <a class="nav" href="/stats">Статистика</a>
         <a class="nav active" href="/admin">Данные</a>
-        <a class="nav" href="#" id="switch-role">Сменить роль</a>
-        <a class="nav" href="#" id="logout-link">Выйти</a>
       </nav>
+      <div class="status-cluster">
+        <button type="button" class="nav logout-link" id="logout-link">Выйти</button>
+      </div>
     </header>
 
     <div class="wrap">
@@ -186,8 +187,7 @@
       }
     };
 
-    document.getElementById("switch-role").onclick = (e) => { e.preventDefault(); Auth.switchRole(); };
-    document.getElementById("logout-link").onclick = (e) => { e.preventDefault(); Auth.logout(); };
+    document.getElementById("logout-link").onclick = () => Auth.logout();
 
     (async () => {
       const user = await Auth.require("dispatcher");

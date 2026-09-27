@@ -5,75 +5,59 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Инструкция для жюри — МосТранс Предикт</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; line-height: 1.55; color: #122; }
-    h1 { font-size: 1.6rem; }
-    code, pre { background: #f4f6f8; padding: 2px 6px; border-radius: 4px; }
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; line-height: 1.55; color: #1a1f2a; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.4rem; }
+    h2 { font-size: 1.05rem; margin: 0 0 8px; }
+    p, li { font-size: 15px; }
+    code, pre { background: #f0f2f5; padding: 2px 6px; border-radius: 3px; font-size: 13px; }
     pre { padding: 12px; overflow: auto; }
-    .step { margin: 18px 0; padding: 14px; border-left: 4px solid #e31e24; background: #fafbfc; }
-    .ok { border-left-color: #1fa97a; }
+    .step { margin: 16px 0; padding: 14px 16px; border-left: 3px solid #c8102e; background: #f7f8fa; }
+    .ok { border-left-color: #0d7a4f; }
+    a { color: #1a56a8; }
   </style>
 </head>
 <body>
-  <h1>Инструкция для жюри</h1>
-  <p><strong>МосТранс Предикт</strong> — прогноз задержки ТС за 10–15 минут: ML-ядро + Backend + BI-дашборд.</p>
+  <h1>Как смотреть решение</h1>
+  <p>МосТранс Предикт: прогноз опоздания на 10–15 минут. ML + backend + пульт. Прод: <a href="https://hackton-test.ru/">hackton-test.ru</a>.</p>
 
   <div class="step ok">
-    <h2>0. Академическая честность DS (потоковая ML)</h2>
-    <p>Файл <a href="/artifacts/submission.csv"><code>submission.csv</code></a> построен моделью
-      <code>delay_catboost_ds.cbm</code> — <b>той же</b>, что обслуживает <code>POST /predict</code> в контейнере <code>ml</code>.</p>
-    <ul>
-      <li>Признаки: <code>FEATURE_COLS</code> (см. <code>GET http://localhost:8001/feature_cols</code>)</li>
-      <li>Анти-утечка: только телеметрия / состояние на момент T</li>
-      <li>Проверка parity: <code>python scripts/verify_stream_parity.py --url http://localhost:8001</code></li>
-      <li>В шапке дашборда и в <code>GET /api/v1/metrics</code> поле <code>ml_model</code></li>
-    </ul>
-    <pre>curl -s http://localhost:8001/info | python3 -m json.tool</pre>
+    <h2>Модель = сабмит</h2>
+    <p><a href="/artifacts/submission.csv"><code>submission.csv</code></a> собран той же <code>delay_catboost_ds.cbm</code>, что отвечает на <code>POST /predict</code>. Признаки только на момент T. Проверка: <code>scripts/verify_stream_parity.py</code>.</p>
   </div>
 
   <div class="step">
     <h2>1. Запуск</h2>
     <pre>docker compose up --build</pre>
+    <p>Или сразу сайт. Вход: <a href="/login">/login</a> — <code>dispatcher</code> / <code>demo</code>.</p>
   </div>
 
   <div class="step">
-    <h2>2. Авторизация (демо)</h2>
-    <p>Вход: <a href="/login">/login</a>. Пароль у всех: <code>demo</code>.</p>
+    <h2>2. Поток</h2>
+    <p>Эмулятор в compose сам шлёт ~12 ТС на TCP <code>:9000</code>. Историю можно залить на <a href="/admin">/admin</a> (JSON/CSV) или через <code>POST /api/v1/telemetry/batch</code>.</p>
+  </div>
+
+  <div class="step">
+    <h2>3. Прогнозы и алерты</h2>
     <ul>
-      <li>Диспетчер: <code>dispatcher</code> → пульт, статистика, сообщения водителям</li>
-      <li>Водитель: <code>driver-1000</code> … <code>driver-1011</code> → кабинет только своего ТС</li>
+      <li><a href="/">Пульт</a> — карта, таблица ТС, инциденты (зелёный/жёлтый/красный)</li>
+      <li>Клик по ТС — горизонт, причина, реком. скорость, сообщение водителю</li>
+      <li><a href="/stats">Статистика</a> — где проблемы по сети</li>
+      <li>Метрики: шапка пульта или <code>GET /api/v1/metrics</code></li>
     </ul>
   </div>
 
   <div class="step">
-    <h2>3. Куда смотреть</h2>
+    <h2>4. Документация</h2>
     <ul>
-      <li><a href="/login">Вход</a> → <a href="/">дашборд диспетчера</a> — карта, треки, таблица ТС, алерты, what-if, сообщения</li>
-      <li><a href="/stats">Отчёты и статистика</a> — диаграммы, проблемные маршруты, день / неделя / месяц</li>
-      <li><a href="/driver">Кабинет водителя</a> — после входа как <code>driver-1000</code></li>
-      <li><a href="/docs">Swagger</a> · <a href="/docs/sphinx/">Sphinx</a> · <a href="/docs/performance.md">perf/фичи</a> · <a href="/artifacts/submission.csv">submission.csv</a></li>
-      <li>Эмулятор NDTP: TCP <code>:9000</code></li>
+      <li><a href="/docs">Swagger</a></li>
+      <li><a href="/docs/sphinx/">Sphinx</a></li>
+      <li><a href="/docs/performance.md">Производительность и фичи</a></li>
     </ul>
   </div>
 
   <div class="step">
-    <h2>4. Поток телематики</h2>
-    <p>Эмулятор в Docker сам шлёт ~12 ТС (TCP <code>:9000</code>). Исторический датасет /
-      ручной JSON/CSV — панель <a href="/admin">/admin</a> (Данные) или
-      <code>POST /api/v1/telemetry/batch</code> / <code>/telemetry/upload</code>.</p>
-  </div>
-
-  <div class="step">
-    <h2>5. Прогнозы и действия диспетчера</h2>
-    <ul>
-      <li>Инциденты + цвет green/yellow/red, статус в пути / остановка / обед</li>
-      <li>Карточка: горизонт 10–15 мин, причина, реком. скорость, сообщение водителю</li>
-      <li>What-if: выпуск доп. ТС</li>
-    </ul>
-  </div>
-
-  <div class="step">
-    <h2>6. Надёжность</h2>
-    <p><code>docker compose stop emulator</code> — режим degraded/historical без падения сервиса.</p>
+    <h2>5. Деградация</h2>
+    <p><code>docker compose stop emulator</code> — API и пульт живы, режим historical.</p>
   </div>
 </body>
 </html>
