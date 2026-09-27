@@ -16,10 +16,14 @@ const state = {
 };
 
 const map = L.map("map", { zoomControl: true, attributionControl: true }).setView([55.76, 37.58], 12);
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19,
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-}).addTo(map);
+// Нейтральная подложка без политических баннеров/флагов OSM.org
+L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+  {
+    maxZoom: 19,
+    attribution: "Esri",
+  }
+).addTo(map);
 
 function el(id) {
   return document.getElementById(id);
