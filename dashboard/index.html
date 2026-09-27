@@ -79,11 +79,17 @@
           <div class="incidents" id="incidents"></div>
         </div>
 
-        <div class="panel">
-          <div class="panel-head"><h2>Сообщение водителю</h2></div>
+        <div class="panel chat-panel">
+          <div class="panel-head">
+            <h2>Переписка</h2>
+            <span class="badge" id="chat-badge">0</span>
+          </div>
           <div class="msg-compose">
             <select id="msg-vehicle"></select>
-            <textarea id="msg-text" rows="3" placeholder="Вы опаздываете. Рекомендуем скорость …"></textarea>
+            <div class="chat-thread" id="chat-thread">
+              <div class="chat-empty">Выберите ТС — здесь будет переписка с водителем</div>
+            </div>
+            <textarea id="msg-text" rows="2" placeholder="Написать водителю…"></textarea>
             <button type="button" id="msg-send-main">Отправить</button>
             <div class="msg-hint" id="msg-hint">Выберите ТС или кликните по инциденту</div>
           </div>

@@ -248,6 +248,57 @@ function renderIncidents(incidents) {
   });
 }
 
+function cleanDriverText(text, fromDriver) {
+  let t = String(text || "");
+  if (fromDriver) t = t.replace(/^Водитель:\s*/i, "");
+  return t;
+}
+
+function renderChat() {
+  const box = el("chat-thread");
+  const badge = el("chat-badge");
+  if (!box) return;
+  const vehicleId = el("msg-vehicle")?.value || state.selectedVehicle || "";
+  if (!vehicleId) {
+    if (badge) badge.textContent = "0";
+    box.innerHTML = `<div class="chat-empty">Выберите ТС — здесь будет переписка с водителем</div>`;
+    return;
+  }
+  const msgs = state.messages[vehicleId] || [];
+  if (badge) badge.textContent = String(msgs.length);
+  if (!msgs.length) {
+    box.innerHTML = `<div class="chat-empty">Пока пусто. Напишите водителю ${vehicleId} — ответ появится здесь.</div>`;
+    return;
+  }
+  box.innerHTML = msgs
+    .map((m) => {
+      const fromDriver = m.from_dispatcher === false;
+      const who = fromDriver ? "водитель" : "вы";
+      const cls = fromDriver ? "drv" : "disp";
+      return `<div class="chat-msg ${cls}">
+        <time>${new Date(m.ts * 1000).toLocaleTimeString("ru-RU")} · ${who}</time>
+        ${cleanDriverText(m.text, fromDriver)}
+      </div>`;
+    })
+    .join("");
+  box.scrollTop = box.scrollHeight;
+}
+
+async function refreshChat(vehicleId) {
+  if (!vehicleId) {
+    renderChat();
+    return;
+  }
+  try {
+    const r = await Auth.fetch(`/api/v1/messages/${encodeURIComponent(vehicleId)}`);
+    if (r.ok) {
+      const list = await r.json();
+      state.messages = { ...state.messages, [vehicleId]: list };
+    }
+  } catch (_) {}
+  renderChat();
+}
+
 function selectVehicle(id) {
   state.selectedVehicle = id;
   el("msg-vehicle").value = id;
@@ -259,6 +310,7 @@ function selectVehicle(id) {
     const sug = Math.round((inc || v).suggested_speed_kmh || 20);
     el("msg-text").placeholder = `Вы опаздываете на ~${delay} мин. Рекомендуем ${sug} км/ч`;
   }
+  refreshChat(id);
 }
 
 async function sendMessage() {
@@ -280,6 +332,7 @@ async function sendMessage() {
   if (r.ok) {
     el("msg-text").value = "";
     el("msg-hint").textContent = "Отправлено водителю ✓";
+    await refreshChat(vehicle_id);
   } else {
     el("msg-hint").textContent = "Ошибка отправки";
   }
@@ -368,6 +421,7 @@ function applySnapshot(msg) {
   upsertMarkers(state.vehicles);
   renderIncidents(state.incidents);
   renderFleet();
+  renderChat();
 }
 
 async function pollFallback() {
@@ -389,6 +443,10 @@ function connectWs() {
 }
 
 el("msg-send-main").addEventListener("click", sendMessage);
+el("msg-vehicle").addEventListener("change", () => {
+  state.selectedVehicle = el("msg-vehicle").value;
+  selectVehicle(state.selectedVehicle);
+});
 el("filter-route").addEventListener("change", renderFleet);
 el("filter-risk").addEventListener("change", renderFleet);
 el("wf-run").addEventListener("click", async () => {

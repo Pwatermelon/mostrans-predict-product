@@ -148,7 +148,7 @@ class AppState:
             ),
             "routes": list(self.routes.values()),
             "messages": {
-                vid: [m.to_dict() for m in msgs[-10:]]
+                vid: [m.to_dict() for m in msgs[-40:]]
                 for vid, msgs in self.messages.items()
             },
             "metrics": self.metrics.to_dict(),
