@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>models.ensemble &#8212; MosTrans Predict  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for models.ensemble</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Ансамбль: приоритет DS CatBoost (delay_catboost_ds) + LSTM fallback."""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">feature_schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">FEATURE_COLS</span><span class="p">,</span> <span class="n">MODEL_ID</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">"mostrans.ensemble"</span><span class="p">)</span>
+
+<span class="n">ARTIFACTS</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">"artifacts"</span>
+
+<span class="c1"># legacy realtime bootstrap features (fallback only)</span>
+<span class="n">TAB_FEATURES</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">"speed_kmh"</span><span class="p">,</span>
+    <span class="s2">"current_delay_sec"</span><span class="p">,</span>
+    <span class="s2">"segment_avg_speed_kmh"</span><span class="p">,</span>
+    <span class="s2">"dwell_sec"</span><span class="p">,</span>
+    <span class="s2">"speed_drop_ratio"</span><span class="p">,</span>
+    <span class="s2">"doors_open_ratio"</span><span class="p">,</span>
+    <span class="s2">"progress_ratio"</span><span class="p">,</span>
+    <span class="s2">"dist_to_segment_m"</span><span class="p">,</span>
+<span class="p">]</span>
+
+<span class="n">CAUSES</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"speed_drop"</span><span class="p">:</span> <span class="s2">"Аномальное снижение скорости на подходе к перекрёстку"</span><span class="p">,</span>
+    <span class="s2">"long_dwell"</span><span class="p">:</span> <span class="s2">"Длительная посадка / простой на остановке"</span><span class="p">,</span>
+    <span class="s2">"congestion"</span><span class="p">:</span> <span class="s2">"Затор на сегменте маршрута"</span><span class="p">,</span>
+    <span class="s2">"schedule_drift"</span><span class="p">:</span> <span class="s2">"Накопившееся отклонение от нитки графика"</span><span class="p">,</span>
+    <span class="s2">"doors"</span><span class="p">:</span> <span class="s2">"Частые открытия дверей вне остановок"</span><span class="p">,</span>
+    <span class="s2">"normal"</span><span class="p">:</span> <span class="s2">"Без выраженного паттерна сбоя"</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<div class="viewcode-block" id="TelemetryLSTM">
+<a class="viewcode-back" href="../../index.html#models.ensemble.TelemetryLSTM">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">TelemetryLSTM</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="n">hidden</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lstm</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LSTM</span><span class="p">(</span><span class="n">input_size</span><span class="p">,</span> <span class="n">hidden</span><span class="p">,</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">num_layers</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="mi">16</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="TelemetryLSTM.forward">
+<a class="viewcode-back" href="../../index.html#models.ensemble.TelemetryLSTM.forward">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lstm</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="n">out</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:])</span></div>
+</div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_pad_seq</span><span class="p">(</span><span class="n">speeds</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">delays</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">16</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">speeds</span><span class="p">[</span><span class="o">-</span><span class="n">n</span><span class="p">:])</span>
+    <span class="n">d</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">delays</span><span class="p">[</span><span class="o">-</span><span class="n">n</span><span class="p">:])</span>
+    <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">n</span><span class="p">:</span>
+        <span class="n">s</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">s</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">s</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">)</span>
+    <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">d</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">n</span><span class="p">:</span>
+        <span class="n">d</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">d</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">d</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span>
+        <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span> <span class="o">/</span> <span class="mf">60.0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span> <span class="o">/</span> <span class="mf">300.0</span><span class="p">],</span>
+        <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<div class="viewcode-block" id="EnsemblePredictor">
+<a class="viewcode-back" href="../../index.html#models.ensemble.EnsemblePredictor">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EnsemblePredictor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""DS CatBoost — основной предикт (тот же, что submission). LSTM — доп. сигнал."""</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">ds_model</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">legacy_cb</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">torch_model</span><span class="p">:</span> <span class="n">TelemetryLSTM</span><span class="p">,</span>
+        <span class="n">device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"cpu"</span><span class="p">,</span>
+        <span class="n">onnx_session</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ds</span> <span class="o">=</span> <span class="n">ds_model</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cb</span> <span class="o">=</span> <span class="n">legacy_cb</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">torch_model</span> <span class="o">=</span> <span class="n">torch_model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">torch_model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="n">device</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">onnx</span> <span class="o">=</span> <span class="n">onnx_session</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">primary</span> <span class="o">=</span> <span class="n">MODEL_ID</span> <span class="k">if</span> <span class="n">ds_model</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">"ensemble-fallback"</span>
+
+<div class="viewcode-block" id="EnsemblePredictor.load_or_bootstrap">
+<a class="viewcode-back" href="../../index.html#models.ensemble.EnsemblePredictor.load_or_bootstrap">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_or_bootstrap</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"EnsemblePredictor"</span><span class="p">:</span>
+        <span class="n">ARTIFACTS</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">device</span> <span class="o">=</span> <span class="s2">"cuda"</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">"cpu"</span>
+        <span class="n">ds</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">legacy</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">catboost</span><span class="w"> </span><span class="kn">import</span> <span class="n">CatBoostRegressor</span>
+
+            <span class="n">ds_path</span> <span class="o">=</span> <span class="n">ARTIFACTS</span> <span class="o">/</span> <span class="s2">"delay_catboost_ds.cbm"</span>
+            <span class="k">if</span> <span class="n">ds_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+                <span class="n">ds</span> <span class="o">=</span> <span class="n">CatBoostRegressor</span><span class="p">()</span>
+                <span class="n">ds</span><span class="o">.</span><span class="n">load_model</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">ds_path</span><span class="p">))</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Loaded DS CatBoost (submission model) from </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">ds_path</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># также ищем в artifacts_public</span>
+                <span class="n">alt</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"/app/artifacts_public/delay_catboost_ds.cbm"</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">alt</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+                    <span class="n">ds</span> <span class="o">=</span> <span class="n">CatBoostRegressor</span><span class="p">()</span>
+                    <span class="n">ds</span><span class="o">.</span><span class="n">load_model</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">alt</span><span class="p">))</span>
+                    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Loaded DS CatBoost from </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">alt</span><span class="p">)</span>
+
+            <span class="n">leg_path</span> <span class="o">=</span> <span class="n">ARTIFACTS</span> <span class="o">/</span> <span class="s2">"delay_catboost.cbm"</span>
+            <span class="k">if</span> <span class="n">leg_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+                <span class="n">legacy</span> <span class="o">=</span> <span class="n">CatBoostRegressor</span><span class="p">()</span>
+                <span class="n">legacy</span><span class="o">.</span><span class="n">load_model</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">leg_path</span><span class="p">))</span>
+            <span class="k">elif</span> <span class="n">ds</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">legacy</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_train_bootstrap_catboost</span><span class="p">(</span><span class="n">CatBoostRegressor</span><span class="p">)</span>
+                <span class="n">legacy</span><span class="o">.</span><span class="n">save_model</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">leg_path</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"CatBoost load failed: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+
+        <span class="n">torch_model</span> <span class="o">=</span> <span class="n">TelemetryLSTM</span><span class="p">()</span>
+        <span class="n">pt_path</span> <span class="o">=</span> <span class="n">ARTIFACTS</span> <span class="o">/</span> <span class="s2">"delay_lstm.pt"</span>
+        <span class="k">if</span> <span class="n">pt_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="n">torch_model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span>
+                <span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">pt_path</span><span class="p">,</span> <span class="n">map_location</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">weights_only</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">cls</span><span class="o">.</span><span class="n">_train_bootstrap_lstm</span><span class="p">(</span><span class="n">torch_model</span><span class="p">)</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">torch_model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span> <span class="n">pt_path</span><span class="p">)</span>
+
+        <span class="n">onnx_sess</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">onnx_path</span> <span class="o">=</span> <span class="n">ARTIFACTS</span> <span class="o">/</span> <span class="s2">"delay_lstm.onnx"</span>
+        <span class="k">if</span> <span class="n">onnx_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="kn">import</span><span class="w"> </span><span class="nn">onnxruntime</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ort</span>
+
+                <span class="n">onnx_sess</span> <span class="o">=</span> <span class="n">ort</span><span class="o">.</span><span class="n">InferenceSession</span><span class="p">(</span>
+                    <span class="nb">str</span><span class="p">(</span><span class="n">onnx_path</span><span class="p">),</span> <span class="n">providers</span><span class="o">=</span><span class="p">[</span><span class="s2">"CPUExecutionProvider"</span><span class="p">]</span>
+                <span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"ONNX not loaded: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">ds</span><span class="p">,</span> <span class="n">legacy</span><span class="p">,</span> <span class="n">torch_model</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">onnx_session</span><span class="o">=</span><span class="n">onnx_sess</span><span class="p">)</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_synth_rows</span><span class="p">(</span><span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">800</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+        <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+        <span class="n">X</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">TAB_FEATURES</span><span class="p">)),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="n">X</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">50</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+        <span class="n">X</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="o">-</span><span class="mi">30</span><span class="p">,</span> <span class="mi">300</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+        <span class="n">X</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">40</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+        <span class="n">X</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">120</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+        <span class="n">X</span><span class="p">[:,</span> <span class="mi">4</span><span class="p">]</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+        <span class="n">X</span><span class="p">[:,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+        <span class="n">X</span><span class="p">[:,</span> <span class="mi">6</span><span class="p">]</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+        <span class="n">X</span><span class="p">[:,</span> <span class="mi">7</span><span class="p">]</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+        <span class="n">y_delay</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="mf">0.35</span> <span class="o">*</span> <span class="n">X</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mf">0.8</span> <span class="o">*</span> <span class="n">X</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">]</span> <span class="o">+</span> <span class="mi">90</span> <span class="o">*</span> <span class="n">X</span><span class="p">[:,</span> <span class="mi">4</span><span class="p">]</span> <span class="o">+</span> <span class="mi">40</span> <span class="o">*</span> <span class="n">X</span><span class="p">[:,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">+</span> <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">15</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">y_delay</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">y_delay</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">600</span><span class="p">)</span>
+        <span class="n">y_prob</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">y_delay</span> <span class="o">-</span> <span class="mi">90</span><span class="p">)</span> <span class="o">/</span> <span class="mi">40</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">X</span><span class="p">,</span> <span class="n">y_delay</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span> <span class="n">y_prob</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_train_bootstrap_catboost</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">CatBoostRegressor</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="n">X</span><span class="p">,</span> <span class="n">y_delay</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_synth_rows</span><span class="p">()</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">CatBoostRegressor</span><span class="p">(</span>
+            <span class="n">iterations</span><span class="o">=</span><span class="mi">80</span><span class="p">,</span>
+            <span class="n">depth</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+            <span class="n">learning_rate</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+            <span class="n">loss_function</span><span class="o">=</span><span class="s2">"RMSE"</span><span class="p">,</span>
+            <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">allow_writing_files</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y_delay</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">model</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_train_bootstrap_lstm</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="n">TelemetryLSTM</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="mi">7</span><span class="p">)</span>
+        <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
+        <span class="n">loss_fn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">MSELoss</span><span class="p">()</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">40</span><span class="p">):</span>
+            <span class="n">speeds</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">50</span><span class="p">,</span> <span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">16</span><span class="p">))</span>
+            <span class="n">delays</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">16</span><span class="p">))</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">speeds</span> <span class="o">/</span> <span class="mf">60.0</span><span class="p">,</span> <span class="n">delays</span> <span class="o">/</span> <span class="mf">300.0</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+            <span class="n">target_delay</span> <span class="o">=</span> <span class="n">delays</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">32</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="mi">50</span> <span class="o">-</span> <span class="n">speeds</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">target_prob</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">target_delay</span> <span class="o">-</span> <span class="mi">90</span><span class="p">)</span> <span class="o">/</span> <span class="mi">40</span><span class="p">))</span>
+            <span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">target_prob</span><span class="p">,</span> <span class="n">target_delay</span> <span class="o">/</span> <span class="mf">300.0</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+            <span class="n">pred</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+            <span class="n">pred_out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="n">pred</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">]),</span> <span class="n">pred</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">2</span><span class="p">]],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">loss</span> <span class="o">=</span> <span class="n">loss_fn</span><span class="p">(</span><span class="n">pred_out</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">y</span><span class="p">))</span>
+            <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+            <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+            <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+
+<div class="viewcode-block" id="EnsemblePredictor.describe">
+<a class="viewcode-back" href="../../index.html#models.ensemble.EnsemblePredictor.describe">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">describe</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"primary_model"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">primary</span><span class="p">,</span>
+            <span class="s2">"ds_catboost"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">ds</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"legacy_catboost"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">cb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"pytorch"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">"onnx"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">onnx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"device"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+            <span class="s2">"feature_cols"</span><span class="p">:</span> <span class="n">FEATURE_COLS</span><span class="p">,</span>
+            <span class="s2">"horizon_sec"</span><span class="p">:</span> <span class="p">[</span><span class="mi">600</span><span class="p">,</span> <span class="mi">900</span><span class="p">],</span>
+            <span class="s2">"integrity"</span><span class="p">:</span> <span class="s2">"submission.csv == delay_catboost_ds.cbm via POST /predict"</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_ds_vector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">features</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="p">[[</span><span class="nb">float</span><span class="p">(</span><span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">FEATURE_COLS</span><span class="p">]],</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_legacy_vector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">features</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="c1"># map DS-ish online keys → legacy</span>
+        <span class="n">mapped</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"speed_kmh"</span><span class="p">:</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"speed_last"</span><span class="p">,</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"speed_kmh"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)),</span>
+            <span class="s2">"current_delay_sec"</span><span class="p">:</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cur_dev_s"</span><span class="p">,</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"current_delay_sec"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)),</span>
+            <span class="s2">"segment_avg_speed_kmh"</span><span class="p">:</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"speed_mean"</span><span class="p">,</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"segment_avg_speed_kmh"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)),</span>
+            <span class="s2">"dwell_sec"</span><span class="p">:</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"dwell_sec"</span><span class="p">,</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"idle_ratio"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">*</span> <span class="mi">60</span><span class="p">),</span>
+            <span class="s2">"speed_drop_ratio"</span><span class="p">:</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"speed_drop_ratio"</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+            <span class="s2">"doors_open_ratio"</span><span class="p">:</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doors_open_ratio"</span><span class="p">,</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"idle_ratio"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)),</span>
+            <span class="s2">"progress_ratio"</span><span class="p">:</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"progress_ratio"</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+            <span class="s2">"dist_to_segment_m"</span><span class="p">:</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="s2">"dist_to_stop_m"</span><span class="p">,</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"dist_to_segment_m"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="p">),</span>
+        <span class="p">}</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="nb">float</span><span class="p">(</span><span class="n">mapped</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">TAB_FEATURES</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_pattern</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">features</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">dwell</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"dwell_sec"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"idle_ratio"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">*</span> <span class="mi">100</span><span class="p">)</span>
+        <span class="n">drop</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"speed_drop_ratio"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">speed</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"speed_last"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"speed_kmh"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">seg</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"speed_mean"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"segment_avg_speed_kmh"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">doors</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doors_open_ratio"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">delay</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cur_dev_s"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"current_delay_sec"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">dwell</span> <span class="o">&gt;=</span> <span class="mi">45</span> <span class="ow">or</span> <span class="nb">float</span><span class="p">(</span><span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"idle_ratio"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">0.7</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"long_dwell"</span>
+        <span class="k">if</span> <span class="n">drop</span> <span class="o">&gt;=</span> <span class="mf">0.55</span> <span class="ow">and</span> <span class="n">speed</span> <span class="o">&lt;</span> <span class="mi">12</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"speed_drop"</span>
+        <span class="k">if</span> <span class="n">seg</span> <span class="o">&lt;</span> <span class="mi">10</span> <span class="ow">and</span> <span class="n">speed</span> <span class="o">&lt;</span> <span class="mi">15</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"congestion"</span>
+        <span class="k">if</span> <span class="n">doors</span> <span class="o">&gt;</span> <span class="mf">0.4</span> <span class="ow">and</span> <span class="n">speed</span> <span class="o">&gt;</span> <span class="mi">5</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"doors"</span>
+        <span class="k">if</span> <span class="n">delay</span> <span class="o">&gt;=</span> <span class="mi">60</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"schedule_drift"</span>
+        <span class="k">return</span> <span class="s2">"normal"</span>
+
+<div class="viewcode-block" id="EnsemblePredictor.predict">
+<a class="viewcode-back" href="../../index.html#models.ensemble.EnsemblePredictor.predict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">predict</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">features</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+        <span class="n">seq_speeds</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">seq_delays</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">horizon_sec</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">780</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+        <span class="n">seq_speeds</span> <span class="o">=</span> <span class="n">seq_speeds</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">seq_delays</span> <span class="o">=</span> <span class="n">seq_delays</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">horizon_sec</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mi">600</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mi">900</span><span class="p">,</span> <span class="n">horizon_sec</span> <span class="ow">or</span> <span class="mi">780</span><span class="p">)))</span>
+        <span class="c1"># ensure horizon in features for DS</span>
+        <span class="k">if</span> <span class="s2">"horizon_sec"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">features</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"horizon_sec"</span><span class="p">):</span>
+            <span class="n">features</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">features</span><span class="p">,</span> <span class="s2">"horizon_sec"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">horizon_sec</span><span class="p">)}</span>
+
+        <span class="n">pattern</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pattern</span><span class="p">(</span><span class="n">features</span><span class="p">)</span>
+        <span class="n">current</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span>
+            <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cur_dev_s"</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">features</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"current_delay_sec"</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="mi">0</span>
+        <span class="p">)</span>
+
+        <span class="c1"># --- primary: DS CatBoost ---</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ds</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ds_vector</span><span class="p">(</span><span class="n">features</span><span class="p">)</span>
+            <span class="n">delay</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ds</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">x</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="c1"># LSTM soft signal only for probability nuance</span>
+            <span class="n">torch_prob</span> <span class="o">=</span> <span class="mf">0.5</span>
+            <span class="n">torch_delay</span> <span class="o">=</span> <span class="n">delay</span>
+            <span class="k">if</span> <span class="n">seq_speeds</span><span class="p">:</span>
+                <span class="n">seq</span> <span class="o">=</span> <span class="n">_pad_seq</span><span class="p">(</span><span class="n">seq_speeds</span><span class="p">,</span> <span class="n">seq_delays</span> <span class="ow">or</span> <span class="p">[</span><span class="n">current</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">seq_speeds</span><span class="p">))</span>
+                <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+                    <span class="n">xt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">seq</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="o">...</span><span class="p">])</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+                    <span class="n">out_t</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">torch_model</span><span class="p">(</span><span class="n">xt</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+                    <span class="n">torch_prob</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="n">out_t</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+                    <span class="n">torch_delay</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">out_t</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">*</span> <span class="mi">300</span><span class="p">)</span>
+            <span class="n">cb_prob</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">math</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">delay</span> <span class="o">-</span> <span class="mi">90</span><span class="p">)</span> <span class="o">/</span> <span class="mi">40</span><span class="p">))</span>
+            <span class="n">prob</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mf">0.99</span><span class="p">,</span> <span class="mf">0.85</span> <span class="o">*</span> <span class="n">cb_prob</span> <span class="o">+</span> <span class="mf">0.15</span> <span class="o">*</span> <span class="n">torch_prob</span><span class="p">)))</span>
+            <span class="n">abs_err</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">delay</span> <span class="o">-</span> <span class="n">current</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.35</span> <span class="o">+</span> <span class="mf">12.0</span>
+            <span class="k">return</span> <span class="p">{</span>
+                <span class="s2">"delay_prob"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">prob</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+                <span class="s2">"predicted_delay_sec"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">delay</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="s2">"abs_error_sec"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">abs_err</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="s2">"pattern"</span><span class="p">:</span> <span class="n">pattern</span><span class="p">,</span>
+                <span class="s2">"cause"</span><span class="p">:</span> <span class="n">CAUSES</span><span class="p">[</span><span class="n">pattern</span><span class="p">],</span>
+                <span class="s2">"horizon_sec"</span><span class="p">:</span> <span class="n">horizon_sec</span><span class="p">,</span>
+                <span class="s2">"model"</span><span class="p">:</span> <span class="n">MODEL_ID</span><span class="p">,</span>
+                <span class="s2">"components"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"ds_catboost_delay"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">delay</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                    <span class="s2">"torch_delay"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">torch_delay</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                    <span class="s2">"torch_prob"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">torch_prob</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+                <span class="p">},</span>
+            <span class="p">}</span>
+
+        <span class="c1"># --- fallback legacy ensemble ---</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_vector</span><span class="p">(</span><span class="n">features</span><span class="p">)</span>
+        <span class="n">cb_delay</span> <span class="o">=</span> <span class="n">current</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">cb_delay</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cb</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">x</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">pass</span>
+        <span class="n">seq</span> <span class="o">=</span> <span class="n">_pad_seq</span><span class="p">(</span><span class="n">seq_speeds</span><span class="p">,</span> <span class="n">seq_delays</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+            <span class="n">xt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">seq</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="o">...</span><span class="p">])</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+            <span class="n">out_t</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">torch_model</span><span class="p">(</span><span class="n">xt</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">torch_prob</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="n">out_t</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+            <span class="n">torch_delay</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">out_t</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">*</span> <span class="mi">300</span><span class="p">)</span>
+        <span class="n">delay</span> <span class="o">=</span> <span class="mf">0.55</span> <span class="o">*</span> <span class="n">cb_delay</span> <span class="o">+</span> <span class="mf">0.45</span> <span class="o">*</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">torch_delay</span><span class="p">)</span>
+        <span class="n">cb_prob</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">math</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">cb_delay</span> <span class="o">-</span> <span class="mi">90</span><span class="p">)</span> <span class="o">/</span> <span class="mi">40</span><span class="p">))</span>
+        <span class="n">prob</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mf">0.99</span><span class="p">,</span> <span class="mf">0.55</span> <span class="o">*</span> <span class="n">cb_prob</span> <span class="o">+</span> <span class="mf">0.45</span> <span class="o">*</span> <span class="n">torch_prob</span><span class="p">)))</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"delay_prob"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">prob</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+            <span class="s2">"predicted_delay_sec"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">delay</span><span class="p">)),</span> <span class="mi">1</span><span class="p">),</span>
+            <span class="s2">"abs_error_sec"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">delay</span> <span class="o">-</span> <span class="n">current</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.35</span> <span class="o">+</span> <span class="mf">12.0</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+            <span class="s2">"pattern"</span><span class="p">:</span> <span class="n">pattern</span><span class="p">,</span>
+            <span class="s2">"cause"</span><span class="p">:</span> <span class="n">CAUSES</span><span class="p">[</span><span class="n">pattern</span><span class="p">],</span>
+            <span class="s2">"horizon_sec"</span><span class="p">:</span> <span class="n">horizon_sec</span><span class="p">,</span>
+            <span class="s2">"model"</span><span class="p">:</span> <span class="s2">"ensemble-fallback"</span><span class="p">,</span>
+            <span class="s2">"components"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"catboost_delay"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">cb_delay</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="s2">"torch_delay"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">torch_delay</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="s2">"torch_prob"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">torch_prob</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+            <span class="p">},</span>
+        <span class="p">}</span></div>
+</div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">MosTrans Predict</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, MosTrans Hackathon.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

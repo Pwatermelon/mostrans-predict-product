@@ -83,7 +83,13 @@ const Auth = {
       /* ignore */
     }
     Auth.clear();
-    location.href = "/login";
+    location.href = "/login?switch=1";
+  },
+
+  /** Смена роли: всегда разлогин → форма входа */
+  switchRole() {
+    Auth.clear();
+    location.href = "/login?switch=1";
   },
 
   wsUrl(path) {

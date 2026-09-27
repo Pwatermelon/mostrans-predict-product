@@ -125,6 +125,16 @@ async def stats_page():
     return {"error": "stats.html not found"}
 
 
+@app.get("/admin", tags=["meta"])
+@app.get("/admin/", tags=["meta"])
+async def admin_page():
+    """Панель загрузки потока / исторического датасета."""
+    path = DASHBOARD_DIR / "admin.html"
+    if path.exists():
+        return FileResponse(path)
+    return {"error": "admin.html not found"}
+
+
 @app.get("/healthz", tags=["meta"])
 async def healthz():
     """Healthcheck для Docker/Caddy."""

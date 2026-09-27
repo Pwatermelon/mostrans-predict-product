@@ -25,6 +25,9 @@
 | What-if | `POST /api/v1/what-if` |
 | Сообщения Д→В | `POST /api/v1/messages`, `/driver` |
 | Авторизация | `/login` · `dispatcher`/`demo`, `driver-1000`…`/demo` |
+| Статистика маршрутов | `/stats` · день/неделя/месяц, A/B, остановки |
+| Панель загрузки данных | `/admin` · JSON/CSV/JSONL → поток |
 | Статусы / трек / таблица | дашборд |
+| Ансамбль CatBoost + LSTM | `ml/models/ensemble.py` |
 | ONNX LSTM (aux) | `ml/artifacts` |
 | Деплой GHCR | `.github/workflows/deploy.yml` |

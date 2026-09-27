@@ -48,16 +48,18 @@
     <h2>3. Куда смотреть</h2>
     <ul>
       <li><a href="/login">Вход</a> → <a href="/">дашборд диспетчера</a> — карта, треки, таблица ТС, алерты, what-if, сообщения</li>
-      <li><a href="/stats">Статистика маршрутов</a> — день / неделя / месяц</li>
+      <li><a href="/stats">Отчёты и статистика</a> — диаграммы, проблемные маршруты, день / неделя / месяц</li>
       <li><a href="/driver">Кабинет водителя</a> — после входа как <code>driver-1000</code></li>
-      <li><a href="/docs">Swagger</a> · <a href="/artifacts/submission.csv">submission.csv</a></li>
+      <li><a href="/docs">Swagger</a> · <a href="/docs/sphinx/">Sphinx</a> · <a href="/docs/performance.md">perf/фичи</a> · <a href="/artifacts/submission.csv">submission.csv</a></li>
       <li>Эмулятор NDTP: TCP <code>:9000</code></li>
     </ul>
   </div>
 
   <div class="step">
     <h2>4. Поток телематики</h2>
-    <p>Эмулятор шлёт 12 ТС. Либо <code>POST /api/v1/telemetry</code> / <code>/telemetry/batch</code> (без auth).</p>
+    <p>Эмулятор в Docker сам шлёт ~12 ТС (TCP <code>:9000</code>). Исторический датасет /
+      ручной JSON/CSV — панель <a href="/admin">/admin</a> (Данные) или
+      <code>POST /api/v1/telemetry/batch</code> / <code>/telemetry/upload</code>.</p>
   </div>
 
   <div class="step">

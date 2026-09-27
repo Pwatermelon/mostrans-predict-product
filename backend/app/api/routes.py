@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 import time
 from typing import Any
 
@@ -156,7 +159,9 @@ async def post_telemetry_batch(
     request: Request,
     body: list[dict[str, Any]] = Body(...),
 ) -> dict[str, Any]:
-    """Пакетная загрузка исторического датасета / валидации."""
+    """Пакетная загрузка исторического датасета / валидации (JSON-массив)."""
+    if len(body) > 20_000:
+        raise HTTPException(400, "Слишком большой пакет (макс. 20000 кадров)")
     orch = request.app.state.orchestrator
     n = 0
     for item in body:
@@ -164,6 +169,49 @@ async def post_telemetry_batch(
         await orch.ingest_frame(frame)
         n += 1
     return {"accepted": n}
+
+
+@router.post("/telemetry/upload", tags=["ingest"])
+async def post_telemetry_upload(request: Request) -> dict[str, Any]:
+    """Загрузка CSV / JSON / JSONL (тело raw). Для панели «Данные» и жюри."""
+    raw = await request.body()
+    if not raw:
+        raise HTTPException(400, "Пустое тело")
+    text = raw.decode("utf-8", errors="replace").strip()
+    if not text:
+        raise HTTPException(400, "Пустое тело")
+    items: list[dict[str, Any]] = []
+    ctype = (request.headers.get("content-type") or "").lower()
+    try:
+        if "csv" in ctype or (not text.startswith("{") and not text.startswith("[") and "," in text.split("\n", 1)[0]):
+            reader = csv.DictReader(io.StringIO(text))
+            items = [dict(row) for row in reader]
+        elif text.startswith("["):
+            parsed = json.loads(text)
+            if not isinstance(parsed, list):
+                raise ValueError("ожидался JSON-массив")
+            items = parsed
+        else:
+            for line in text.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                items.append(json.loads(line))
+    except Exception as exc:
+        raise HTTPException(400, f"Не удалось разобрать файл: {exc}") from exc
+    if not items:
+        raise HTTPException(400, "Нет кадров в файле")
+    if len(items) > 20_000:
+        raise HTTPException(400, "Слишком большой пакет (макс. 20000 кадров)")
+    orch = request.app.state.orchestrator
+    n = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        frame = frame_from_dict(item)
+        await orch.ingest_frame(frame)
+        n += 1
+    return {"accepted": n, "format": "csv" if "csv" in ctype else "json"}
 
 
 @router.post("/what-if", tags=["analytics"])
@@ -271,3 +319,13 @@ async def stats_overview(
 ) -> dict[str, Any]:
     """Сводка по всем маршрутам: day | week | month | live."""
     return request.app.state.orchestrator.stats.overview(period)
+
+
+@router.get("/stats/report", tags=["analytics"])
+async def stats_report(
+    request: Request,
+    period: str = "day",
+    _user: User = Depends(require_dispatcher),
+) -> dict[str, Any]:
+    """Отчёт для BI: KPI, проблемные маршруты, данные для диаграмм."""
+    return request.app.state.orchestrator.stats.report(period)

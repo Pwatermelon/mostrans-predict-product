@@ -4,8 +4,21 @@ copyright = "2026, MosTrans Hackathon"
 author = "MosTrans Predict Team"
 extensions = ["sphinx.ext.autodoc", "sphinx.ext.napoleon", "sphinx.ext.viewcode"]
 templates_path = ["_templates"]
-exclude_patterns = ["_build"]
+exclude_patterns = ["_build", "sphinx", "**.md", "**.html"]
 html_theme = "alabaster"
+autodoc_mock_imports = [
+    "fastapi",
+    "pydantic",
+    "pydantic_settings",
+    "httpx",
+    "catboost",
+    "torch",
+    "onnxruntime",
+    "numpy",
+    "pandas",
+    "sklearn",
+    "starlette",
+]
 import os
 import sys
 

@@ -10,10 +10,8 @@
    `https://<DOMAIN>/docs/jury.html`
 
 3. **Документация**  
-   - OpenAPI/Swagger: `https://<DOMAIN>/docs`  
-   - API кратко: `https://<DOMAIN>/docs/api.md`  
-   - PyDoc в коде модулей `backend/app/*`, `ml/*`  
-   - Техдока NDTP эмулятора: в датасете `docs/Emulator-and-Telematic-Packets-Specification.md`
+   `https://<DOMAIN>/docs/sphinx/`  
+   (Swagger отдельно: `https://<DOMAIN>/docs` · API: `/docs/api.md`)
 
 4. **Производительность и доп. фичи**  
    `https://<DOMAIN>/docs/performance.md`

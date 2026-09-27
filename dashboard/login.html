@@ -4,69 +4,65 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Вход — МосТранс Предикт</title>
-  <meta name="theme-color" content="#0B1F33" />
+  <meta name="theme-color" content="#c8102e" />
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Manrope:wght@500;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@500;600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #071421; --text: #e8eef5; --muted: #8fa3b8;
-      --red: #e31e24; --cyan: #3db8c5;
-      --font: Manrope, system-ui, sans-serif; --mono: "JetBrains Mono", monospace;
+      --bg: #eef0f3; --surface: #fff; --line: #d5dae3; --text: #1a1f2a;
+      --muted: #5c6678; --red: #c8102e; --font: "IBM Plex Sans", sans-serif;
+      --mono: "IBM Plex Mono", monospace;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0; min-height: 100dvh; font-family: var(--font); color: var(--text);
-      background:
-        radial-gradient(900px 420px at 10% -10%, rgba(227,30,36,.22), transparent 55%),
-        radial-gradient(700px 380px at 90% 0%, rgba(61,184,197,.16), transparent 50%),
-        linear-gradient(165deg, #051018, var(--bg) 55%, #0a1a2c);
+      background: var(--bg);
       display: flex; align-items: center; justify-content: center; padding: 24px;
     }
     .card {
-      width: min(420px, 100%);
-      background: rgba(14,36,56,.92);
-      border: 1px solid rgba(255,255,255,.1);
-      border-radius: 16px;
+      width: min(400px, 100%);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 6px;
       padding: 28px 24px 22px;
-      box-shadow: 0 24px 60px rgba(0,0,0,.35);
     }
-    .brand { font-size: 22px; font-weight: 800; letter-spacing: -0.03em; margin: 0 0 4px; }
+    .mark {
+      width: 20px; height: 20px; background: var(--red);
+      clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+      display: inline-block; vertical-align: -3px; margin-right: 8px;
+    }
+    .brand { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 4px; }
     .brand span { color: var(--red); }
-    .sub { color: var(--muted); font-size: 13px; margin: 0 0 22px; line-height: 1.45; }
-    label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 6px; text-transform: uppercase; letter-spacing: .05em; }
+    .sub { color: var(--muted); font-size: 13px; margin: 0 0 20px; line-height: 1.45; }
+    label { display: block; font-size: 11px; color: var(--muted); margin: 0 0 5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
     input {
-      width: 100%; font: 600 15px var(--font); padding: 12px 14px; margin-bottom: 14px;
-      border-radius: 10px; border: 1px solid rgba(255,255,255,.12);
-      background: #102538; color: var(--text);
+      width: 100%; font: 500 14px var(--font); padding: 10px 12px; margin-bottom: 12px;
+      border-radius: 4px; border: 1px solid var(--line); background: #fff; color: var(--text);
     }
-    input:focus { outline: 1px solid var(--cyan); border-color: transparent; }
-    button {
-      width: 100%; margin-top: 4px; padding: 13px;
-      font: 700 15px var(--font); border: 0; border-radius: 10px; cursor: pointer;
-      background: linear-gradient(180deg,#e53a3f,var(--red)); color: #fff;
+    input:focus { outline: 2px solid rgba(200,16,46,.2); border-color: var(--red); }
+    button.go {
+      width: 100%; margin-top: 4px; padding: 11px;
+      font: 600 14px var(--font); border: 0; border-radius: 4px; cursor: pointer;
+      background: var(--red); color: #fff;
     }
-    button:disabled { opacity: .6; cursor: wait; }
-    .err { color: #ff8a8a; font-size: 13px; min-height: 18px; margin: 10px 0 0; }
+    .err { color: var(--red); font-size: 13px; min-height: 18px; margin: 10px 0 0; }
     .hint {
-      margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.08);
+      margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
       font-size: 12px; color: var(--muted); line-height: 1.5;
     }
-    .hint code {
-      font-family: var(--mono); font-size: 11px; color: var(--cyan);
-      background: rgba(61,184,197,.1); padding: 1px 5px; border-radius: 4px;
-    }
-    .roles { display: flex; gap: 8px; margin-bottom: 16px; }
+    .hint code { font-family: var(--mono); font-size: 11px; background: #f0f2f5; padding: 1px 5px; border-radius: 3px; color: var(--text); }
+    .roles { display: flex; gap: 6px; margin-bottom: 14px; }
     .roles button {
-      flex: 1; background: #102538; color: var(--text);
-      border: 1px solid rgba(255,255,255,.12); font-weight: 600; font-size: 13px; padding: 10px;
+      flex: 1; background: #f7f8fa; color: var(--muted);
+      border: 1px solid var(--line); font: 600 13px var(--font); padding: 9px; border-radius: 4px; cursor: pointer;
     }
-    .roles button.on { border-color: var(--cyan); color: var(--cyan); }
+    .roles button.on { border-color: var(--red); color: var(--red); background: #fff; }
   </style>
 </head>
 <body>
   <div class="card">
-    <h1 class="brand">МосТранс <span>Предикт</span></h1>
-    <p class="sub">Вход для диспетчера и водителя. Демо-пароль у всех: <code>demo</code>.</p>
+    <h1 class="brand"><i class="mark"></i>МосТранс <span>Предикт</span></h1>
+    <p class="sub">Вход для диспетчера и водителя. Пароль демо: <code>demo</code>.</p>
 
     <div class="roles">
       <button type="button" class="on" id="role-d" data-login="dispatcher">Диспетчер</button>
@@ -78,13 +74,13 @@
       <input id="login" name="login" autocomplete="username" value="dispatcher" required />
       <label for="password">Пароль</label>
       <input id="password" name="password" type="password" autocomplete="current-password" value="demo" required />
-      <button type="submit" id="go">Войти</button>
+      <button type="submit" class="go" id="go">Войти</button>
       <p class="err" id="err"></p>
     </form>
 
     <div class="hint">
-      Диспетчер: <code>dispatcher</code> / <code>demo</code> → пульт и статистика.<br />
-      Водитель: <code>driver-1000</code> … <code>driver-1011</code> / <code>demo</code> → кабинет своего ТС.
+      Диспетчер: <code>dispatcher</code> / <code>demo</code><br />
+      Водитель: <code>driver-1000</code> … <code>driver-1011</code> / <code>demo</code>
     </div>
   </div>
   <script src="/static/auth.js"></script>
@@ -122,10 +118,7 @@
           return;
         }
         Auth.setSession(data.token, data.user);
-        if (next && next.startsWith("/")) {
-          location.href = next;
-          return;
-        }
+        if (next && next.startsWith("/")) { location.href = next; return; }
         location.href = data.user.role === "driver" ? "/driver" : "/";
       } catch {
         err.textContent = "Сеть недоступна";
@@ -134,8 +127,12 @@
       }
     };
 
-    // уже залогинен — сразу дальше
     (async () => {
+      if (params.get("switch") === "1") {
+        Auth.clear();
+        try { await fetch("/api/v1/auth/logout", { method: "POST", credentials: "same-origin" }); } catch (_) {}
+        return;
+      }
       if (!Auth.token()) return;
       const r = await fetch("/api/v1/auth/me", { headers: Auth.headers(), credentials: "same-origin" });
       if (!r.ok) return;

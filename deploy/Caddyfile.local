@@ -28,6 +28,11 @@
 		file_server
 	}
 
+	handle /docs/sphinx* {
+		root * /srv
+		file_server
+	}
+
 	handle /artifacts* {
 		reverse_proxy backend:8000
 	}
@@ -41,6 +46,10 @@
 	}
 
 	handle /stats* {
+		reverse_proxy backend:8000
+	}
+
+	handle /admin* {
 		reverse_proxy backend:8000
 	}
 

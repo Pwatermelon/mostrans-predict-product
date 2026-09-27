@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>app.main &#8212; MosTrans Predict  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for app.main</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">MosTrans Predict — Backend API.</span>
+
+<span class="sd">Оркестрация потока NDTP, расчёт признаков, вызов ML-ядра, WebSocket-дашборд.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">contextlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">asynccontextmanager</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">fastapi</span><span class="w"> </span><span class="kn">import</span> <span class="n">FastAPI</span><span class="p">,</span> <span class="n">WebSocket</span><span class="p">,</span> <span class="n">WebSocketDisconnect</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">fastapi.middleware.cors</span><span class="w"> </span><span class="kn">import</span> <span class="n">CORSMiddleware</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">fastapi.responses</span><span class="w"> </span><span class="kn">import</span> <span class="n">FileResponse</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">fastapi.staticfiles</span><span class="w"> </span><span class="kn">import</span> <span class="n">StaticFiles</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">app.api.routes</span><span class="w"> </span><span class="kn">import</span> <span class="n">router</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">app.auth</span><span class="w"> </span><span class="kn">import</span> <span class="n">parse_token</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">app.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">app.services.orchestrator</span><span class="w"> </span><span class="kn">import</span> <span class="n">Orchestrator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">app.services.state</span><span class="w"> </span><span class="kn">import</span> <span class="n">AppState</span>
+
+<span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span>
+    <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span>
+    <span class="nb">format</span><span class="o">=</span><span class="s2">"</span><span class="si">%(asctime)s</span><span class="s2"> [</span><span class="si">%(levelname)s</span><span class="s2">] </span><span class="si">%(name)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">"</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">"mostrans.backend"</span><span class="p">)</span>
+
+<span class="n">state</span> <span class="o">=</span> <span class="n">AppState</span><span class="p">()</span>
+<span class="n">orchestrator</span> <span class="o">=</span> <span class="n">Orchestrator</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="lifespan">
+<a class="viewcode-back" href="../../index.html#app.main.lifespan">[docs]</a>
+<span class="nd">@asynccontextmanager</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">lifespan</span><span class="p">(</span><span class="n">app</span><span class="p">:</span> <span class="n">FastAPI</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Старт фоновых задач и graceful shutdown."""</span>
+    <span class="n">app</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">state</span> <span class="o">=</span> <span class="n">state</span>
+    <span class="n">app</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">orchestrator</span> <span class="o">=</span> <span class="n">orchestrator</span>
+    <span class="n">task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">orchestrator</span><span class="o">.</span><span class="n">run</span><span class="p">())</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Backend started, horizon=</span><span class="si">%s</span><span class="s2">s"</span><span class="p">,</span> <span class="n">settings</span><span class="o">.</span><span class="n">predict_horizon_sec</span><span class="p">)</span>
+    <span class="k">yield</span>
+    <span class="n">orchestrator</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+    <span class="n">task</span><span class="o">.</span><span class="n">cancel</span><span class="p">()</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">await</span> <span class="n">task</span>
+    <span class="k">except</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">CancelledError</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Backend stopped"</span><span class="p">)</span></div>
+
+
+
+<span class="n">app</span> <span class="o">=</span> <span class="n">FastAPI</span><span class="p">(</span>
+    <span class="n">title</span><span class="o">=</span><span class="s2">"MosTrans Predict API"</span><span class="p">,</span>
+    <span class="n">description</span><span class="o">=</span><span class="p">(</span>
+        <span class="s2">"Backend хакатона Московского транспорта: приём NDTP, "</span>
+        <span class="s2">"признаки, прогноз задержки 10–15 мин, алерты диспетчеру."</span>
+    <span class="p">),</span>
+    <span class="n">version</span><span class="o">=</span><span class="s2">"1.0.0"</span><span class="p">,</span>
+    <span class="n">lifespan</span><span class="o">=</span><span class="n">lifespan</span><span class="p">,</span>
+    <span class="n">docs_url</span><span class="o">=</span><span class="s2">"/docs"</span><span class="p">,</span>
+    <span class="n">redoc_url</span><span class="o">=</span><span class="s2">"/redoc"</span><span class="p">,</span>
+    <span class="n">openapi_url</span><span class="o">=</span><span class="s2">"/openapi.json"</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">app</span><span class="o">.</span><span class="n">add_middleware</span><span class="p">(</span>
+    <span class="n">CORSMiddleware</span><span class="p">,</span>
+    <span class="n">allow_origins</span><span class="o">=</span><span class="p">[</span><span class="s2">"*"</span><span class="p">],</span>
+    <span class="n">allow_credentials</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">allow_methods</span><span class="o">=</span><span class="p">[</span><span class="s2">"*"</span><span class="p">],</span>
+    <span class="n">allow_headers</span><span class="o">=</span><span class="p">[</span><span class="s2">"*"</span><span class="p">],</span>
+<span class="p">)</span>
+
+<span class="n">app</span><span class="o">.</span><span class="n">include_router</span><span class="p">(</span><span class="n">router</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s2">"/api/v1"</span><span class="p">)</span>
+
+<span class="n">DASHBOARD_DIR</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">dashboard_dir</span><span class="p">)</span>
+<span class="n">ARTIFACTS_DIR</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">artifacts_dir</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">DASHBOARD_DIR</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+    <span class="n">app</span><span class="o">.</span><span class="n">mount</span><span class="p">(</span><span class="s2">"/static"</span><span class="p">,</span> <span class="n">StaticFiles</span><span class="p">(</span><span class="n">directory</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">DASHBOARD_DIR</span><span class="p">)),</span> <span class="n">name</span><span class="o">=</span><span class="s2">"static"</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">ARTIFACTS_DIR</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+    <span class="n">app</span><span class="o">.</span><span class="n">mount</span><span class="p">(</span><span class="s2">"/artifacts"</span><span class="p">,</span> <span class="n">StaticFiles</span><span class="p">(</span><span class="n">directory</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">ARTIFACTS_DIR</span><span class="p">)),</span> <span class="n">name</span><span class="o">=</span><span class="s2">"artifacts"</span><span class="p">)</span>
+
+
+<span class="nd">@app</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"/"</span><span class="p">,</span> <span class="n">tags</span><span class="o">=</span><span class="p">[</span><span class="s2">"meta"</span><span class="p">])</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">root</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">"""Лендинг дашборда."""</span>
+    <span class="n">index</span> <span class="o">=</span> <span class="n">DASHBOARD_DIR</span> <span class="o">/</span> <span class="s2">"index.html"</span>
+    <span class="k">if</span> <span class="n">index</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">FileResponse</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"service"</span><span class="p">:</span> <span class="s2">"mostrans-predict-backend"</span><span class="p">,</span>
+        <span class="s2">"docs"</span><span class="p">:</span> <span class="s2">"/docs"</span><span class="p">,</span>
+        <span class="s2">"health"</span><span class="p">:</span> <span class="s2">"/api/v1/health"</span><span class="p">,</span>
+        <span class="s2">"submission"</span><span class="p">:</span> <span class="s2">"/artifacts/submission.csv"</span><span class="p">,</span>
+    <span class="p">}</span>
+
+
+<span class="nd">@app</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"/login"</span><span class="p">,</span> <span class="n">tags</span><span class="o">=</span><span class="p">[</span><span class="s2">"meta"</span><span class="p">])</span>
+<span class="nd">@app</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"/login/"</span><span class="p">,</span> <span class="n">tags</span><span class="o">=</span><span class="p">[</span><span class="s2">"meta"</span><span class="p">])</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">login_page</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">"""Страница входа диспетчер / водитель."""</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">DASHBOARD_DIR</span> <span class="o">/</span> <span class="s2">"login.html"</span>
+    <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">FileResponse</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">"error"</span><span class="p">:</span> <span class="s2">"login.html not found"</span><span class="p">}</span>
+
+
+<span class="nd">@app</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"/driver"</span><span class="p">,</span> <span class="n">tags</span><span class="o">=</span><span class="p">[</span><span class="s2">"meta"</span><span class="p">])</span>
+<span class="nd">@app</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"/driver/"</span><span class="p">,</span> <span class="n">tags</span><span class="o">=</span><span class="p">[</span><span class="s2">"meta"</span><span class="p">])</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">driver_page</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">"""Мобильный вид водителя."""</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">DASHBOARD_DIR</span> <span class="o">/</span> <span class="s2">"driver.html"</span>
+    <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">FileResponse</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">"error"</span><span class="p">:</span> <span class="s2">"driver.html not found"</span><span class="p">}</span>
+
+
+<span class="nd">@app</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"/stats"</span><span class="p">,</span> <span class="n">tags</span><span class="o">=</span><span class="p">[</span><span class="s2">"meta"</span><span class="p">])</span>
+<span class="nd">@app</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"/stats/"</span><span class="p">,</span> <span class="n">tags</span><span class="o">=</span><span class="p">[</span><span class="s2">"meta"</span><span class="p">])</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">stats_page</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">"""Дашборд исторической статистики маршрутов."""</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">DASHBOARD_DIR</span> <span class="o">/</span> <span class="s2">"stats.html"</span>
+    <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">FileResponse</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">"error"</span><span class="p">:</span> <span class="s2">"stats.html not found"</span><span class="p">}</span>
+
+
+<span class="nd">@app</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"/healthz"</span><span class="p">,</span> <span class="n">tags</span><span class="o">=</span><span class="p">[</span><span class="s2">"meta"</span><span class="p">])</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">healthz</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">"""Healthcheck для Docker/Caddy."""</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">"status"</span><span class="p">:</span> <span class="s2">"ok"</span><span class="p">,</span> <span class="s2">"ts"</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()}</span>
+
+
+<span class="nd">@app</span><span class="o">.</span><span class="n">websocket</span><span class="p">(</span><span class="s2">"/ws/live"</span><span class="p">)</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">ws_live</span><span class="p">(</span><span class="n">websocket</span><span class="p">:</span> <span class="n">WebSocket</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Поток состояния дашборда — только диспетчер."""</span>
+    <span class="n">token</span> <span class="o">=</span> <span class="n">websocket</span><span class="o">.</span><span class="n">query_params</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"token"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">websocket</span><span class="o">.</span><span class="n">cookies</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mt_token"</span><span class="p">)</span>
+    <span class="n">user</span> <span class="o">=</span> <span class="n">parse_token</span><span class="p">(</span><span class="n">token</span><span class="p">)</span> <span class="k">if</span> <span class="n">token</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">user</span> <span class="ow">or</span> <span class="n">user</span><span class="o">.</span><span class="n">role</span> <span class="o">!=</span> <span class="s2">"dispatcher"</span><span class="p">:</span>
+        <span class="k">await</span> <span class="n">websocket</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">code</span><span class="o">=</span><span class="mi">4401</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="k">await</span> <span class="n">websocket</span><span class="o">.</span><span class="n">accept</span><span class="p">()</span>
+    <span class="n">state</span><span class="o">.</span><span class="n">ws_clients</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">websocket</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">await</span> <span class="n">websocket</span><span class="o">.</span><span class="n">send_json</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">snapshot</span><span class="p">())</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">wait_for</span><span class="p">(</span><span class="n">websocket</span><span class="o">.</span><span class="n">receive_text</span><span class="p">(),</span> <span class="n">timeout</span><span class="o">=</span><span class="mf">30.0</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">TimeoutError</span><span class="p">:</span>
+                <span class="k">await</span> <span class="n">websocket</span><span class="o">.</span><span class="n">send_json</span><span class="p">({</span><span class="s2">"type"</span><span class="p">:</span> <span class="s2">"ping"</span><span class="p">,</span> <span class="s2">"ts"</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()})</span>
+    <span class="k">except</span> <span class="n">WebSocketDisconnect</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">ws_clients</span><span class="o">.</span><span class="n">discard</span><span class="p">(</span><span class="n">websocket</span><span class="p">)</span>
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">MosTrans Predict</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, MosTrans Hackathon.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

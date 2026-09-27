@@ -1,6 +1,6 @@
 /* MosTrans Predict — dispatcher BI */
 
-const RISK_COLOR = { green: "#1FA97A", yellow: "#F5A623", red: "#E31E24" };
+const RISK_COLOR = { green: "#0d7a4f", yellow: "#c47a00", red: "#c8102e" };
 const STATUS_RU = { on_route: "в пути", at_stop: "остановка", break: "обед/простой" };
 
 const state = {
@@ -15,26 +15,11 @@ const state = {
   selectedVehicle: "",
 };
 
-// Бесплатные тайлы без API-ключа (Carto dark_all требует ключ)
 const map = L.map("map", { zoomControl: true, attributionControl: true }).setView([55.76, 37.58], 12);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
-  subdomains: "abcd",
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CARTO',
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
 }).addTo(map);
-// fallback если voyager тоже режет — второй слой не добавляем; при ошибке переключим на OSM
-map.whenReady(() => {
-  // probe: if tiles fail visually user sees OSM via manual switch in console; add OSM as alternate
-});
-const osmFallback = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19,
-  attribution: "&copy; OpenStreetMap",
-});
-// Use OSM as primary — no API key, always works
-map.eachLayer((l) => {
-  if (l instanceof L.TileLayer) map.removeLayer(l);
-});
-osmFallback.addTo(map);
 
 function el(id) {
   return document.getElementById(id);
@@ -385,7 +370,10 @@ el("wf-run").addEventListener("click", async () => {
   const user = await Auth.require("dispatcher");
   if (!user) return;
   if (el("user-name")) el("user-name").textContent = user.display_name || user.login;
-  if (el("logout-btn")) el("logout-btn").onclick = () => Auth.logout();
+  if (el("logout-btn")) {
+    el("logout-btn").textContent = "Сменить роль";
+    el("logout-btn").onclick = () => Auth.switchRole();
+  }
   connectWs();
   pollFallback();
   setInterval(pollFallback, 5000);

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Данные и поток — МосТранс Предикт</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+  <style>
+    .wrap { padding: 20px 24px; max-width: 920px; margin: 0 auto; overflow: auto; height: calc(100vh - var(--header-h)); }
+    .card {
+      background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+      padding: 16px 18px; margin-bottom: 12px; color: var(--text);
+    }
+    .card h2 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+    .card p, .card li { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0; }
+    .kv { background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; }
+    .kv label { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+    .kv strong { font-family: var(--mono); font-size: 18px; color: var(--text); }
+    textarea, input[type=file] {
+      width: 100%; margin: 8px 0 12px; font: 13px var(--mono);
+      background: #fff; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 10px;
+    }
+    textarea { min-height: 140px; resize: vertical; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    button.primary, .btn {
+      background: var(--red); border: 1px solid var(--red); color: #fff;
+      font: 600 13px var(--font); padding: 10px 14px; border-radius: 4px; cursor: pointer;
+    }
+    button.ghost {
+      background: #fff; border: 1px solid var(--line); color: var(--text);
+      font: 600 13px var(--font); padding: 10px 14px; border-radius: 4px; cursor: pointer;
+    }
+    #log { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; color: var(--focus); min-height: 1.2em; }
+    code { font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--surface-2); padding: 1px 4px; border-radius: 3px; }
+    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <div>
+          <div class="brand-name">МосТранс <span>Предикт</span></div>
+          <div class="brand-sub">загрузка потока / исторический датасет</div>
+        </div>
+      </div>
+      <nav class="nav-links">
+        <a class="nav" href="/">Пульт</a>
+        <a class="nav" href="/stats">Статистика</a>
+        <a class="nav active" href="/admin">Данные</a>
+        <a class="nav" href="#" id="switch-role">Сменить роль</a>
+        <a class="nav" href="#" id="logout-link">Выйти</a>
+      </nav>
+    </header>
+
+    <div class="wrap">
+      <h1 style="margin:0;font-size:24px;letter-spacing:-.03em">Панель данных</h1>
+      <p style="color:var(--muted);margin:6px 0 16px;font-size:14px">
+        Для жюри: живой эмулятор NDTP уже в Docker. Здесь — ручная подача JSON/JSONL/CSV и статус потока.
+      </p>
+
+      <div class="card">
+        <h2>Статус потока</h2>
+        <div class="grid" id="status">
+          <div class="kv"><label>Режим</label><strong id="st-mode">…</strong></div>
+          <div class="kv"><label>ТС онлайн</label><strong id="st-v">…</strong></div>
+          <div class="kv"><label>Алерты</label><strong id="st-a">…</strong></div>
+        </div>
+        <p>Эмулятор в стеке слушает TCP <code>:9000</code> и сам шлёт ~12 ТС. Отдельный docker-load из датасета
+          (<code>ndtp-telemetry-emulator.tar</code>) не обязателен — наш контейнер <code>emulator</code> уже поднят.</p>
+      </div>
+
+      <div class="card">
+        <h2>1. Загрузить исторический / тестовый поток</h2>
+        <p>JSON-массив, JSON Lines или CSV с колонками
+          <code>vehicle_id,route_id,lat,lon,speed_kmh</code> (опц. <code>ts,course,doors_open,schedule_delay_sec</code>).
+          Кадры уходят в тот же пайплайн, что эмулятор → признаки → ML → алерты на пульте.</p>
+        <input type="file" id="file" accept=".json,.jsonl,.ndjson,.csv,.txt" />
+        <textarea id="paste" placeholder='[{"vehicle_id":"ТС-1000","route_id":"M1","lat":55.75,"lon":37.62,"speed_kmh":18}]'></textarea>
+        <div class="row">
+          <button type="button" class="primary" id="upload">Загрузить в систему</button>
+          <button type="button" class="ghost" id="sample">Вставить демо-кадр</button>
+        </div>
+        <div id="log"></div>
+      </div>
+
+      <div class="card">
+        <h2>2. Как жюри подаёт поток</h2>
+        <ul>
+          <li><b>Эмулятор (по умолчанию):</b> <code>docker compose up --build</code> — поток уже идёт.</li>
+          <li><b>Исторический датасет:</b> загрузить файл выше или
+            <code>POST /api/v1/telemetry/batch</code> (Swagger <a href="/docs" style="color:var(--cyan)">/docs</a>).</li>
+          <li><b>Прогнозы и алерты:</b> пульт <a href="/" style="color:var(--cyan)">/</a> после входа
+            <code>dispatcher</code> / <code>demo</code>.</li>
+          <li><b>Метрики latency:</b> <code>GET /api/v1/metrics</code> или шапка пульта.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/auth.js"></script>
+  <script>
+    const log = (t) => { document.getElementById("log").textContent = t; };
+
+    async function refreshStatus() {
+      try {
+        const r = await Auth.fetch("/api/v1/health");
+        const d = await r.json();
+        document.getElementById("st-mode").textContent = d.metrics?.mode || d.status || "—";
+        document.getElementById("st-v").textContent = d.vehicles ?? "—";
+        document.getElementById("st-a").textContent = d.incidents ?? "—";
+      } catch (_) {}
+    }
+
+    async function parseFile(file) {
+      const text = await file.text();
+      const name = (file.name || "").toLowerCase();
+      if (name.endsWith(".csv")) {
+        const r = await Auth.fetch("/api/v1/telemetry/upload", {
+          method: "POST",
+          headers: { "Content-Type": "text/csv" },
+          body: text,
+        });
+        return r;
+      }
+      // json / jsonl
+      let body = text.trim();
+      if (body.startsWith("[")) {
+        /* array ok */
+      } else {
+        // jsonl → array
+        const lines = body.split(/\n/).map((l) => l.trim()).filter(Boolean);
+        body = JSON.stringify(lines.map((l) => JSON.parse(l)));
+      }
+      return Auth.fetch("/api/v1/telemetry/batch", {
+        method: "POST",
+        body,
+      });
+    }
+
+    document.getElementById("sample").onclick = () => {
+      document.getElementById("paste").value = JSON.stringify([
+        {
+          vehicle_id: "ТС-1999",
+          route_id: "M1",
+          lat: 55.7558,
+          lon: 37.6173,
+          speed_kmh: 12,
+          schedule_delay_sec: 180,
+          ts: Date.now() / 1000,
+        },
+      ], null, 2);
+    };
+
+    document.getElementById("upload").onclick = async () => {
+      const file = document.getElementById("file").files[0];
+      const paste = document.getElementById("paste").value.trim();
+      log("Загрузка…");
+      try {
+        let r;
+        if (file) {
+          r = await parseFile(file);
+        } else if (paste) {
+          let body = paste;
+          if (!body.startsWith("[")) {
+            const lines = body.split(/\n/).map((l) => l.trim()).filter(Boolean);
+            body = JSON.stringify(lines.map((l) => JSON.parse(l)));
+          }
+          r = await Auth.fetch("/api/v1/telemetry/batch", { method: "POST", body });
+        } else {
+          log("Выберите файл или вставьте JSON");
+          return;
+        }
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          log("Ошибка: " + (d.detail || r.status));
+          return;
+        }
+        log("Принято кадров: " + (d.accepted ?? "?") + ". Откройте пульт — прогнозы появятся через несколько секунд.");
+        refreshStatus();
+      } catch (e) {
+        log("Сбой: " + (e.message || e));
+      }
+    };
+
+    document.getElementById("switch-role").onclick = (e) => { e.preventDefault(); Auth.switchRole(); };
+    document.getElementById("logout-link").onclick = (e) => { e.preventDefault(); Auth.logout(); };
+
+    (async () => {
+      const user = await Auth.require("dispatcher");
+      if (!user) return;
+      refreshStatus();
+      setInterval(refreshStatus, 5000);
+    })();
+  </script>
+</body>
+</html>

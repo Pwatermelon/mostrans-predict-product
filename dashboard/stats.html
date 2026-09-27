@@ -3,71 +3,224 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Статистика маршрутов — МосТранс Предикт</title>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Manrope:wght@500;700;800&display=swap" rel="stylesheet" />
+  <title>Отчёты и статистика — МосТранс Предикт</title>
+  <meta name="theme-color" content="#c8102e" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
-    .stats-wrap { padding: 20px; max-width: 1100px; margin: 0 auto; overflow: auto; height: calc(100vh - 56px); }
-    .period-tabs { display: flex; gap: 8px; margin: 16px 0; flex-wrap: wrap; }
+    .stats-wrap { max-width: 1180px; }
+    .page-title { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+    .page-sub { color: var(--muted); margin: 4px 0 0; font-size: 13px; }
+    .period-tabs { display: flex; gap: 6px; margin: 16px 0; flex-wrap: wrap; }
     .period-tabs button {
-      background: #102538; border: 1px solid var(--line); color: var(--text);
-      padding: 8px 14px; border-radius: 8px; font-weight: 700; cursor: pointer;
+      background: var(--surface); border: 1px solid var(--line); color: var(--text);
+      padding: 7px 12px; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 13px;
     }
-    .period-tabs button.active { background: var(--red); border-color: transparent; }
-    .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
-    .totals .kv strong { font-size: 22px; }
-    .stats-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .stats-table th, .stats-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; }
-    .stats-table th { color: var(--muted); font-size: 10px; text-transform: uppercase; }
+    .period-tabs button.active { background: var(--red); border-color: var(--red); color: #fff; }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .kpi {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 12px 14px;
+    }
+    .kpi label {
+      display: block; font-size: 10px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px;
+    }
+    .kpi strong { font-family: var(--mono); font-size: 22px; font-weight: 500; }
+    .kpi .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .kpi.bad { border-color: #f3c4cb; background: #fff8f8; }
+    .kpi.bad strong { color: var(--red); }
+    .kpi.warn { border-color: #efd7a0; background: #fffbf0; }
+    .kpi.warn strong { color: var(--amber); }
+
+    .charts {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 12px 14px 10px;
+      min-height: 280px;
+    }
+    .chart-card h3 {
+      margin: 0 0 8px; font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+    }
+    .chart-card canvas { width: 100% !important; max-height: 240px; }
+
+    .problems {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .problems h3 {
+      margin: 0; padding: 12px 14px; font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+      border-bottom: 1px solid var(--line); background: var(--surface-2);
+    }
+    .prob-row {
+      display: grid;
+      grid-template-columns: 10px 1.4fr 0.7fr 0.7fr 0.6fr 1.6fr;
+      gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      align-items: center;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .prob-row:hover { background: #eef4fc; }
+    .prob-row:last-child { border-bottom: 0; }
+    .dot-sev { width: 8px; height: 8px; border-radius: 1px; }
+    .dot-sev.critical { background: var(--red); }
+    .dot-sev.warning { background: var(--amber); }
+    .sev-tag {
+      font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 3px;
+      display: inline-block;
+    }
+    .sev-tag.critical { background: #fde8eb; color: var(--red); }
+    .sev-tag.warning { background: #fff3d6; color: var(--amber); }
+    .mono { font-family: var(--mono); font-size: 12px; }
+
+    .stats-table {
+      width: 100%; border-collapse: collapse; font-size: 13px;
+      background: var(--surface); border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
+    }
+    .stats-table th, .stats-table td {
+      padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: left; color: var(--text);
+    }
+    .stats-table th {
+      color: var(--muted); font-size: 10px; text-transform: uppercase; background: var(--surface-2); font-weight: 600;
+    }
     .stats-table tr { cursor: pointer; }
-    .stats-table tr:hover { background: rgba(255,255,255,.04); }
-    .detail { margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-solid); }
-    @media (max-width: 700px) { .totals { grid-template-columns: 1fr; } }
+    .stats-table tr:hover { background: #eef4fc; }
+    .bar-mini {
+      height: 6px; background: #e8ebf0; border-radius: 2px; overflow: hidden; min-width: 80px;
+    }
+    .bar-mini i { display: block; height: 100%; background: var(--red); border-radius: 2px; }
+
+    .detail {
+      margin-top: 14px; padding: 16px; border: 1px solid var(--line);
+      border-radius: 6px; background: var(--surface); color: var(--text);
+    }
+    .detail .charts { margin-top: 12px; margin-bottom: 0; }
+    .empty-ok {
+      padding: 18px 14px; color: var(--green); font-size: 13px; font-weight: 500;
+    }
+
+    @media (max-width: 960px) {
+      .kpi-grid { grid-template-columns: 1fr 1fr; }
+      .charts { grid-template-columns: 1fr; }
+      .prob-row { grid-template-columns: 10px 1fr; gap: 6px; }
+      .prob-row > *:nth-child(n+3) { grid-column: 2; }
+    }
   </style>
 </head>
 <body>
-  <div class="app" style="grid-template-rows:56px 1fr">
+  <div class="app">
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark"></div>
         <div>
           <div class="brand-name">МосТранс <span>Предикт</span></div>
-          <div class="brand-sub">историческая статистика маршрутов</div>
+          <div class="brand-sub">отчёты · где проблемы · динамика</div>
         </div>
       </div>
       <nav class="nav-links">
         <a class="nav" href="/">Пульт</a>
         <a class="nav active" href="/stats">Статистика</a>
+        <a class="nav" href="/admin">Данные</a>
+        <a class="nav" href="#" id="switch-role">Сменить роль</a>
         <a class="nav" href="#" id="logout-link">Выйти</a>
       </nav>
     </header>
+
     <div class="stats-wrap">
-      <h1 style="margin:0;font-size:24px;letter-spacing:-.03em">Сводка по маршрутам</h1>
-      <p style="color:var(--muted);margin:6px 0 0;font-size:14px">День / неделя / месяц и live-поток. Клик по строке — карточка маршрута.</p>
+      <h1 class="page-title">Отчёты и статистика</h1>
+      <p class="page-sub" id="insight-line">Где срывается график, в какие часы пик, какие маршруты требуют вмешательства.</p>
+
       <div class="period-tabs" id="tabs">
         <button type="button" data-p="live">Live</button>
         <button type="button" data-p="day" class="active">День</button>
         <button type="button" data-p="week">Неделя</button>
         <button type="button" data-p="month">Месяц</button>
       </div>
-      <div class="totals" id="totals"></div>
+
+      <div class="kpi-grid" id="kpis"></div>
+
+      <div class="charts">
+        <div class="chart-card">
+          <h3>Средняя задержка по маршрутам</h3>
+          <canvas id="chart-delay"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Распределение риска (кадры)</h3>
+          <canvas id="chart-risk"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Динамика за сутки (профиль опозданий)</h3>
+          <canvas id="chart-timeline"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Алерты по маршрутам</h3>
+          <canvas id="chart-alerts"></canvas>
+        </div>
+        <div class="chart-card" style="grid-column: 1 / -1">
+          <h3>Сравнение delay: live / день / неделя / месяц</h3>
+          <canvas id="chart-compare" height="90"></canvas>
+        </div>
+      </div>
+
+      <div class="problems">
+        <h3>Проблемные места — куда смотреть диспетчеру</h3>
+        <div id="problems"></div>
+      </div>
+
       <table class="stats-table">
         <thead>
           <tr>
-            <th>Маршрут</th><th>A → B</th><th>Остановки</th><th>Рейсы</th>
-            <th>Ср. delay</th><th>Ontime</th><th>Алерты</th><th>Окно</th>
+            <th>Маршрут</th><th>A → B</th><th>Статус</th><th>Ср. delay</th>
+            <th>Ontime</th><th>Алерты</th><th>Рейсы</th><th>Delay</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
       </table>
+
       <div class="detail" id="detail" hidden></div>
     </div>
   </div>
+
   <script src="/static/auth.js"></script>
   <script>
+    const COLORS = {
+      red: "#c8102e",
+      amber: "#c47a00",
+      green: "#0d7a4f",
+      blue: "#1a56a8",
+      grid: "#e5e8ef",
+      text: "#5c6678",
+    };
+    const SEV_COLOR = { critical: COLORS.red, warning: COLORS.amber, ok: COLORS.green };
+
     let period = "day";
     const params = new URLSearchParams(location.search);
     if (params.get("period")) period = params.get("period");
+
+    const charts = {};
 
     function fmt(s) {
       const n = Math.round(Number(s) || 0);
@@ -75,33 +228,245 @@
       return Math.floor(Math.abs(n) / 60) + " мин";
     }
 
-    async function load() {
-      document.querySelectorAll("#tabs button").forEach((b) => {
-        b.classList.toggle("active", b.dataset.p === period);
+    function destroyChart(key) {
+      if (charts[key]) { charts[key].destroy(); delete charts[key]; }
+    }
+
+    function baseOpts() {
+      return {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: { labels: { color: COLORS.text, boxWidth: 12, font: { size: 11 } } },
+          tooltip: { callbacks: {} },
+        },
+        scales: {
+          x: { ticks: { color: COLORS.text, font: { size: 11 } }, grid: { color: COLORS.grid } },
+          y: { ticks: { color: COLORS.text, font: { size: 11 } }, grid: { color: COLORS.grid }, beginAtZero: true },
+        },
+      };
+    }
+
+    function renderCharts(d) {
+      const c = d.charts;
+      const delayColors = c.delay_by_route.map((x) => SEV_COLOR[x.severity] || COLORS.blue);
+
+      destroyChart("delay");
+      charts.delay = new Chart(document.getElementById("chart-delay"), {
+        type: "bar",
+        data: {
+          labels: c.delay_by_route.map((x) => x.label),
+          datasets: [{
+            label: "Delay, с",
+            data: c.delay_by_route.map((x) => x.value),
+            backgroundColor: delayColors,
+            borderRadius: 2,
+            maxBarThickness: 48,
+          }],
+        },
+        options: {
+          ...baseOpts(),
+          plugins: {
+            ...baseOpts().plugins,
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: (items) => c.delay_by_route[items[0].dataIndex].full_name,
+                label: (item) => "Средняя задержка: " + fmt(item.raw),
+              },
+            },
+          },
+        },
       });
-      const r = await Auth.fetch("/api/v1/stats/overview?period=" + encodeURIComponent(period));
-      if (!r.ok) return;
-      const d = await r.json();
-      document.getElementById("totals").innerHTML = `
-        <div class="kv"><label>Маршрутов</label><strong>${d.totals.routes}</strong></div>
-        <div class="kv"><label>Ср. delay</label><strong>${fmt(d.totals.avg_delay_sec)}</strong></div>
-        <div class="kv"><label>Алерты</label><strong>${d.totals.alerts}</strong></div>`;
-      document.getElementById("tbody").innerHTML = d.routes.map((x) => `
+
+      destroyChart("risk");
+      const rd = c.risk_distribution;
+      charts.risk = new Chart(document.getElementById("chart-risk"), {
+        type: "doughnut",
+        data: {
+          labels: ["Норма", "Риск", "Критично"],
+          datasets: [{
+            data: [rd.green || 0, rd.yellow || 0, rd.red || 0],
+            backgroundColor: [COLORS.green, COLORS.amber, COLORS.red],
+            borderWidth: 0,
+          }],
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: "bottom", labels: { color: COLORS.text, boxWidth: 12 } },
+          },
+        },
+      });
+
+      destroyChart("timeline");
+      charts.timeline = new Chart(document.getElementById("chart-timeline"), {
+        type: "line",
+        data: {
+          labels: c.timeline.map((x) => x.label),
+          datasets: [
+            {
+              label: "Delay, с",
+              data: c.timeline.map((x) => x.avg_delay_sec),
+              borderColor: COLORS.red,
+              backgroundColor: "rgba(200,16,46,.08)",
+              fill: true,
+              tension: 0.3,
+              pointRadius: 0,
+              borderWidth: 2,
+            },
+            {
+              label: "Алерты",
+              data: c.timeline.map((x) => x.alerts),
+              borderColor: COLORS.amber,
+              tension: 0.3,
+              pointRadius: 0,
+              borderWidth: 1.5,
+              yAxisID: "y1",
+            },
+          ],
+        },
+        options: {
+          ...baseOpts(),
+          scales: {
+            x: {
+              ticks: { color: COLORS.text, font: { size: 10 }, maxTicksLimit: 12 },
+              grid: { color: COLORS.grid },
+            },
+            y: {
+              position: "left",
+              ticks: { color: COLORS.text, font: { size: 11 } },
+              grid: { color: COLORS.grid },
+              title: { display: true, text: "delay, с", color: COLORS.text, font: { size: 10 } },
+            },
+            y1: {
+              position: "right",
+              ticks: { color: COLORS.text, font: { size: 11 } },
+              grid: { drawOnChartArea: false },
+              title: { display: true, text: "алерты", color: COLORS.text, font: { size: 10 } },
+            },
+          },
+        },
+      });
+
+      destroyChart("alerts");
+      charts.alerts = new Chart(document.getElementById("chart-alerts"), {
+        type: "bar",
+        data: {
+          labels: c.alerts_by_route.map((x) => x.label),
+          datasets: [{
+            label: "Алерты",
+            data: c.alerts_by_route.map((x) => x.value),
+            backgroundColor: c.alerts_by_route.map((x) => SEV_COLOR[x.severity] || COLORS.amber),
+            borderRadius: 2,
+            maxBarThickness: 48,
+          }],
+        },
+        options: {
+          ...baseOpts(),
+          plugins: { ...baseOpts().plugins, legend: { display: false } },
+        },
+      });
+
+      destroyChart("compare");
+      const cmp = c.period_compare;
+      charts.compare = new Chart(document.getElementById("chart-compare"), {
+        type: "bar",
+        data: {
+          labels: cmp.map((x) => x.name.split("«")[0].trim() || x.route_id),
+          datasets: [
+            { label: "Live", data: cmp.map((x) => x.live), backgroundColor: COLORS.blue },
+            { label: "День", data: cmp.map((x) => x.day), backgroundColor: COLORS.green },
+            { label: "Неделя", data: cmp.map((x) => x.week), backgroundColor: COLORS.amber },
+            { label: "Месяц", data: cmp.map((x) => x.month), backgroundColor: COLORS.red },
+          ],
+        },
+        options: {
+          ...baseOpts(),
+          scales: {
+            ...baseOpts().scales,
+            x: { ...baseOpts().scales.x, stacked: false },
+          },
+        },
+      });
+    }
+
+    function renderKpis(d) {
+      const t = d.totals;
+      const ins = d.insights || {};
+      const critClass = t.critical_routes > 0 ? "bad" : t.warning_routes > 0 ? "warn" : "";
+      document.getElementById("kpis").innerHTML = `
+        <div class="kpi ${critClass}">
+          <label>Проблемные маршруты</label>
+          <strong>${t.critical_routes + t.warning_routes}</strong>
+          <div class="hint">${t.critical_routes} критич. · ${t.warning_routes} риск</div>
+        </div>
+        <div class="kpi">
+          <label>Ср. delay</label>
+          <strong>${fmt(t.avg_delay_sec)}</strong>
+          <div class="hint">ontime ${t.avg_ontime_pct ?? "—"}%</div>
+        </div>
+        <div class="kpi ${t.alerts > 50 ? "warn" : ""}">
+          <label>Алерты за период</label>
+          <strong>${t.alerts}</strong>
+          <div class="hint">${t.trips || 0} рейсов / сэмплов</div>
+        </div>
+        <div class="kpi">
+          <label>Пик опозданий</label>
+          <strong>${ins.peak_hour || "—"}</strong>
+          <div class="hint">${ins.peak_delay_sec != null ? fmt(ins.peak_delay_sec) : "—"} · хуже: ${ins.worst_route || "—"}</div>
+        </div>`;
+
+      document.getElementById("insight-line").textContent =
+        ins.critical_count > 0
+          ? `Сейчас в фокусе: ${ins.worst_route} (delay ${fmt(ins.worst_delay_sec)}). Пик нагрузки около ${ins.peak_hour}.`
+          : `Критических маршрутов нет. Пик нагрузки около ${ins.peak_hour || "—"}. Период: ${d.period}.`;
+    }
+
+    function renderProblems(list) {
+      const box = document.getElementById("problems");
+      if (!list.length) {
+        box.innerHTML = '<div class="empty-ok">Критических и рисковых маршрутов нет — сеть в норме.</div>';
+        return;
+      }
+      const sevRu = { critical: "критично", warning: "риск" };
+      box.innerHTML = `
+        <div class="prob-row" style="font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:600;cursor:default;background:var(--surface-2)">
+          <span></span><span>Маршрут</span><span>Статус</span><span>Delay</span><span>Алерты</span><span>Горячая точка / рекомендация</span>
+        </div>` + list.map((p) => `
+        <div class="prob-row" data-id="${p.route_id}">
+          <i class="dot-sev ${p.severity}"></i>
+          <div><b>${p.name}</b></div>
+          <div><span class="sev-tag ${p.severity}">${sevRu[p.severity] || p.severity}</span></div>
+          <div class="mono">${fmt(p.avg_delay_sec)}</div>
+          <div class="mono">${p.alerts}</div>
+          <div style="color:var(--muted);font-size:12px">
+            <b style="color:var(--text)">${p.hotspot || "—"}</b>
+            ${p.hotspot_delay_sec != null ? " · " + fmt(p.hotspot_delay_sec) : ""}<br>${p.recommendation}
+          </div>
+        </div>`).join("");
+      box.querySelectorAll(".prob-row[data-id]").forEach((el) => {
+        el.onclick = () => showDetail(el.dataset.id);
+      });
+    }
+
+    function renderTable(routes) {
+      const maxDelay = Math.max(...routes.map((x) => Number(x.avg_delay_sec) || 0), 1);
+      const sevRu = { critical: "критично", warning: "риск", ok: "норма" };
+      document.getElementById("tbody").innerHTML = routes.map((x) => `
         <tr data-id="${x.route_id}">
           <td><b>${x.name}</b></td>
           <td>${x.point_a || "—"} → ${x.point_b || "—"}</td>
-          <td>${x.stops_count}</td>
-          <td>${x.trips ?? x.samples ?? "—"}</td>
-          <td>${fmt(x.avg_delay_sec)}</td>
-          <td>${x.ontime_pct ?? "—"}%</td>
-          <td>${x.alerts ?? 0}</td>
-          <td>${x.first_trip}–${x.last_trip}</td>
+          <td><span class="sev-tag ${x.severity}">${sevRu[x.severity] || x.severity}</span></td>
+          <td class="mono">${fmt(x.avg_delay_sec)}</td>
+          <td class="mono">${x.ontime_pct ?? "—"}%</td>
+          <td class="mono">${x.alerts ?? 0}</td>
+          <td class="mono">${x.trips ?? x.samples ?? "—"}</td>
+          <td><div class="bar-mini"><i style="width:${Math.round((Number(x.avg_delay_sec)||0)/maxDelay*100)}%;background:${SEV_COLOR[x.severity]}"></i></div></td>
         </tr>`).join("");
       document.querySelectorAll("#tbody tr").forEach((tr) => {
         tr.addEventListener("click", () => showDetail(tr.dataset.id));
       });
-      const focus = params.get("route");
-      if (focus) showDetail(focus);
     }
 
     async function showDetail(id) {
@@ -111,19 +476,76 @@
       const box = document.getElementById("detail");
       box.hidden = false;
       const stops = (d.stops || []).map((s) => s.name).join(" → ");
+      const segs = (d.problem_segments || [])
+        .map((s) => `<li><b>${s.name}</b> — ${fmt(s.avg_delay_sec)} (${s.share_pct}% вкладов)</li>`)
+        .join("");
       box.innerHTML = `
-        <h2 style="margin:0 0 8px">${d.name}</h2>
-        <p style="color:var(--muted);margin:0 0 12px">A: ${(d.point_a||{}).name} · B: ${(d.point_b||{}).name} · ${d.first_trip}–${d.last_trip}</p>
+        <h2 style="margin:0 0 6px;font-size:18px">${d.name}</h2>
+        <p style="color:var(--muted);margin:0 0 12px;font-size:13px">
+          A: ${(d.point_a||{}).name || "—"} · B: ${(d.point_b||{}).name || "—"} ·
+          окно ${d.first_trip}–${d.last_trip} · ТС сейчас: ${d.active_count ?? 0}
+        </p>
         <div class="grid2">
-          <div class="kv"><label>Live delay</label><strong>${fmt(d.live.avg_delay_sec)}</strong></div>
-          <div class="kv"><label>Live ontime</label><strong>${d.live.ontime_pct}%</strong></div>
-          <div class="kv"><label>День delay</label><strong>${fmt(d.history.day?.avg_delay_sec)}</strong></div>
-          <div class="kv"><label>Неделя delay</label><strong>${fmt(d.history.week?.avg_delay_sec)}</strong></div>
-          <div class="kv"><label>Месяц delay</label><strong>${fmt(d.history.month?.avg_delay_sec)}</strong></div>
-          <div class="kv"><label>ТС сейчас</label><strong>${d.active_count}</strong></div>
+          <div class="kv"><label>Live delay</label><strong>${fmt(d.live?.avg_delay_sec)}</strong></div>
+          <div class="kv"><label>Live ontime</label><strong>${d.live?.ontime_pct ?? "—"}%</strong></div>
+          <div class="kv"><label>День</label><strong>${fmt(d.history?.day?.avg_delay_sec)}</strong></div>
+          <div class="kv"><label>Неделя</label><strong>${fmt(d.history?.week?.avg_delay_sec)}</strong></div>
+          <div class="kv"><label>Месяц</label><strong>${fmt(d.history?.month?.avg_delay_sec)}</strong></div>
+          <div class="kv"><label>Алерты (день)</label><strong>${d.history?.day?.alerts ?? "—"}</strong></div>
         </div>
-        <p style="margin:12px 0 0;font-size:13px;color:var(--muted)">${stops}</p>`;
+        <div class="charts">
+          <div class="chart-card">
+            <h3>Профиль задержки маршрута по часам</h3>
+            <canvas id="chart-route-hour"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Участки с наибольшим вкладом в опоздания</h3>
+            <ul style="margin:8px 0 0;padding-left:18px;color:var(--text);font-size:13px;line-height:1.55">${segs || "<li>Нет данных</li>"}</ul>
+            <p style="margin:12px 0 0;font-size:12px;color:var(--muted)">${stops}</p>
+          </div>
+        </div>`;
+      destroyChart("routeHour");
+      const hourly = d.hourly || [];
+      charts.routeHour = new Chart(document.getElementById("chart-route-hour"), {
+        type: "line",
+        data: {
+          labels: hourly.map((x) => x.label),
+          datasets: [{
+            label: "Delay, с",
+            data: hourly.map((x) => x.avg_delay_sec),
+            borderColor: COLORS.red,
+            backgroundColor: "rgba(200,16,46,.1)",
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+            borderWidth: 2,
+          }],
+        },
+        options: {
+          ...baseOpts(),
+          plugins: { ...baseOpts().plugins, legend: { display: false } },
+          scales: {
+            x: { ticks: { maxTicksLimit: 12, color: COLORS.text, font: { size: 10 } }, grid: { color: COLORS.grid } },
+            y: { beginAtZero: true, ticks: { color: COLORS.text }, grid: { color: COLORS.grid } },
+          },
+        },
+      });
       box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    async function load() {
+      document.querySelectorAll("#tabs button").forEach((b) => {
+        b.classList.toggle("active", b.dataset.p === period);
+      });
+      const r = await Auth.fetch("/api/v1/stats/report?period=" + encodeURIComponent(period));
+      if (!r.ok) return;
+      const d = await r.json();
+      renderKpis(d);
+      renderCharts(d);
+      renderProblems(d.problems || []);
+      renderTable(d.routes || []);
+      const focus = params.get("route");
+      if (focus) showDetail(focus);
     }
 
     document.getElementById("tabs").addEventListener("click", (e) => {
@@ -134,12 +556,13 @@
       load();
     });
     document.getElementById("logout-link").onclick = (e) => { e.preventDefault(); Auth.logout(); };
+    document.getElementById("switch-role").onclick = (e) => { e.preventDefault(); Auth.switchRole(); };
 
     (async () => {
       const user = await Auth.require("dispatcher");
       if (!user) return;
-      load();
-      setInterval(load, 10000);
+      await load();
+      setInterval(load, 15000);
     })();
   </script>
 </body>

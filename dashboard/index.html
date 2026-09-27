@@ -4,11 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>МосТранс Предикт — диспетчерский пульт</title>
-  <meta name="theme-color" content="#0B1F33" />
+  <meta name="theme-color" content="#c8102e" />
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
@@ -19,20 +19,20 @@
         <div class="brand-mark" aria-hidden="true"></div>
         <div>
           <div class="brand-name">МосТранс <span>Предикт</span></div>
-          <div class="brand-sub">горизонт 10–15 мин · <span id="model-id">delay_catboost_ds</span></div>
+          <div class="brand-sub">10–15 мин · <span id="model-id">delay_catboost_ds</span></div>
         </div>
       </div>
       <nav class="nav-links">
         <a class="nav active" href="/">Пульт</a>
         <a class="nav" href="/stats">Статистика</a>
-        <a class="nav" href="/login">Смена роли</a>
+        <a class="nav" href="/admin">Данные</a>
       </nav>
       <div class="status-cluster">
         <div class="pill" id="mode-pill"><i class="dot"></i><span>подключение…</span></div>
         <div class="stat"><label>Latency</label><strong id="lat-ms">—</strong></div>
         <div class="stat"><label>Алерты</label><strong id="alerts-n">0</strong></div>
-        <div class="stat"><label>Кто</label><strong id="user-name" style="font-size:12px">—</strong></div>
-        <button type="button" class="nav" id="logout-btn" style="cursor:pointer;background:transparent;border:0;color:inherit;font:inherit">Выйти</button>
+        <div class="stat"><label>Оператор</label><strong id="user-name">—</strong></div>
+        <button type="button" class="nav" id="logout-btn">Сменить роль</button>
         <div class="clock" id="clock">--:--:--</div>
       </div>
     </header>

@@ -4,47 +4,45 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>МосТранс — кабинет водителя</title>
-  <meta name="theme-color" content="#0B1F33" />
+  <meta name="theme-color" content="#c8102e" />
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Manrope:wght@500;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@500;600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #071421; --text: #e8eef5; --muted: #8fa3b8;
-      --red: #e31e24; --amber: #f5a623; --green: #1fa97a; --cyan: #3db8c5;
-      --font: Manrope, system-ui, sans-serif; --mono: "JetBrains Mono", monospace;
+      --bg: #eef0f3; --surface: #fff; --line: #d5dae3; --text: #1a1f2a;
+      --muted: #5c6678; --red: #c8102e; --amber: #c47a00; --green: #0d7a4f;
+      --font: "IBM Plex Sans", sans-serif; --mono: "IBM Plex Mono", monospace;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0; min-height: 100dvh; font-family: var(--font); color: var(--text);
-      background: linear-gradient(165deg, #051018, var(--bg) 50%, #0a1a2c);
-      padding: 16px;
+      background: var(--bg); padding: 16px;
     }
-    h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.03em; }
-    .sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
-    .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
-    .who { font-size: 13px; color: var(--cyan); }
-    button.link {
+    h1 { font-size: 20px; margin: 0 0 4px; font-weight: 700; }
+    .sub { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+    .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+    .who { font-size: 13px; color: var(--text); font-weight: 600; }
+    button.link, a.back {
       background: none; border: 0; color: var(--muted); font: 600 13px var(--font);
       cursor: pointer; text-decoration: underline; padding: 0;
     }
     .card {
-      background: rgba(14,36,56,.92); border: 1px solid rgba(255,255,255,.08);
-      border-radius: 14px; padding: 16px; margin-bottom: 12px;
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: 6px; padding: 14px; margin-bottom: 10px;
     }
-    .big { font-family: var(--mono); font-size: 36px; font-weight: 600; letter-spacing: -0.04em; }
-    .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+    .big { font-family: var(--mono); font-size: 34px; font-weight: 500; letter-spacing: -0.03em; color: var(--text); }
+    .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; font-weight: 600; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .risk-green { color: var(--green); }
     .risk-yellow { color: var(--amber); }
     .risk-red { color: var(--red); }
     .inbox { display: flex; flex-direction: column; gap: 8px; }
     .msg {
-      padding: 10px 12px; border-radius: 10px;
-      background: rgba(61,184,197,.1); border: 1px solid rgba(61,184,197,.3);
-      font-size: 14px; line-height: 1.4;
+      padding: 10px 12px; border-radius: 4px;
+      background: #f0f4fa; border: 1px solid var(--line);
+      font-size: 14px; line-height: 1.4; color: var(--text);
     }
     .msg time { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-    a.back { color: var(--cyan); font-size: 13px; text-decoration: none; }
     #wait { color: var(--muted); font-size: 14px; }
   </style>
 </head>
@@ -54,7 +52,7 @@
     <button type="button" class="link" id="logout">Выйти</button>
   </div>
   <h1>Кабинет водителя</h1>
-  <p class="sub"><span class="who" id="who">…</span> · задержка, скорость, сообщения диспетчера</p>
+  <p class="sub"><span class="who" id="who">…</span></p>
 
   <div id="wait">Ждём телематику по вашему ТС…</div>
   <div id="panel" hidden>
@@ -66,11 +64,11 @@
     <div class="grid">
       <div class="card">
         <div class="label">Реком. скорость</div>
-        <div class="big" style="font-size:28px" id="sug">—</div>
+        <div class="big" style="font-size:26px" id="sug">—</div>
       </div>
       <div class="card">
         <div class="label">Сейчас</div>
-        <div class="big" style="font-size:28px" id="spd">—</div>
+        <div class="big" style="font-size:26px" id="spd">—</div>
       </div>
     </div>
     <div class="card">
@@ -83,13 +81,11 @@
   <script>
     const STATUS = { on_route: "в пути", at_stop: "на остановке", break: "обед / простой" };
     let vehicleId = "";
-
     function fmt(s) {
       const n = Math.round(Number(s) || 0);
       if (Math.abs(n) < 60) return n + " с";
       return Math.floor(Math.abs(n) / 60) + " мин " + (Math.abs(n) % 60) + " с";
     }
-
     async function load() {
       if (!vehicleId) return;
       const r = await Auth.fetch("/api/v1/driver/" + encodeURIComponent(vehicleId));
@@ -109,7 +105,7 @@
       document.getElementById("sug").textContent = Math.round(d.suggested_speed_kmh) + " км/ч";
       document.getElementById("spd").textContent = Math.round(d.speed_kmh) + " км/ч";
       document.getElementById("meta").textContent =
-        `${d.route_id} · ${STATUS[d.status] || d.status} · ${d.segment_name || ""} · модель ${d.model}`;
+        `${d.route_id} · ${STATUS[d.status] || d.status} · ${d.segment_name || ""} · ${d.model}`;
       const box = document.getElementById("inbox");
       if (!d.messages || !d.messages.length) {
         box.innerHTML = '<div class="sub">Сообщений нет</div>';
@@ -119,20 +115,16 @@
         ).join("");
       }
     }
-
     document.getElementById("logout").onclick = () => Auth.logout();
-
     (async () => {
       const user = await Auth.require();
       if (!user) return;
       if (user.role === "dispatcher") {
         document.getElementById("back").href = "/";
-        document.getElementById("back").textContent = "← Пульт диспетчера";
-        // диспетчер может открыть чужой кабинет через ?v=
+        document.getElementById("back").textContent = "← Пульт";
         vehicleId = new URLSearchParams(location.search).get("v") || "";
         if (!vehicleId) {
-          document.getElementById("who").textContent = "диспетчер — укажите ?v=ТС-1000";
-          document.getElementById("wait").textContent = "Добавьте в URL параметр v=ТС-1000";
+          document.getElementById("who").textContent = "укажите ?v=ТС-1000";
           return;
         }
       } else {

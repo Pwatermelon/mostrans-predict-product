@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>МосТранс Предикт — документация кода &#8212; MosTrans Predict  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="id1">
+<h1>МосТранс Предикт — документация кода<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
+<p>ИИ-система раннего прогнозирования задержек наземного транспорта (горизонт 10–15 мин).</p>
+<p>Модули: <strong>ML-ядро</strong> · <strong>Backend</strong> · <strong>BI-дашборд</strong>.</p>
+<section id="id2">
+<h2>Смежные ссылки<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Инструкция жюри: <code class="docutils literal notranslate"><span class="pre">/docs/jury.html</span></code></p></li>
+<li><p>OpenAPI / Swagger: <code class="docutils literal notranslate"><span class="pre">/docs</span></code></p></li>
+<li><p>API кратко: <code class="docutils literal notranslate"><span class="pre">/docs/api.md</span></code></p></li>
+<li><p>Производительность и доп. фичи: <code class="docutils literal notranslate"><span class="pre">/docs/performance.md</span></code></p></li>
+</ul>
+</section>
+<section id="module-app.main">
+<span id="backend"></span><h2>Backend<a class="headerlink" href="#module-app.main" title="Link to this heading">¶</a></h2>
+<p>MosTrans Predict — Backend API.</p>
+<p>Оркестрация потока NDTP, расчёт признаков, вызов ML-ядра, WebSocket-дашборд.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="app.main.healthz">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.main.</span></span><span class="sig-name descname"><span class="pre">healthz</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#app.main.healthz" title="Link to this definition">¶</a></dt>
+<dd><p>Healthcheck для Docker/Caddy.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.main.lifespan">
+<span class="sig-prename descclassname"><span class="pre">app.main.</span></span><span class="sig-name descname"><span class="pre">lifespan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">app</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.FastAPI</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/app/main.html#lifespan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.main.lifespan" title="Link to this definition">¶</a></dt>
+<dd><p>Старт фоновых задач и graceful shutdown.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.main.root">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.main.</span></span><span class="sig-name descname"><span class="pre">root</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#app.main.root" title="Link to this definition">¶</a></dt>
+<dd><p>Лендинг дашборда.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.main.ws_live">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.main.</span></span><span class="sig-name descname"><span class="pre">ws_live</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">websocket</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.WebSocket</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#app.main.ws_live" title="Link to this definition">¶</a></dt>
+<dd><p>Поток состояния дашборда — только диспетчер.</p>
+</dd></dl>
+
+<p id="module-app.auth">Демо-авторизация: диспетчер и водители (HMAC-токен).</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="app.auth.User">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.auth.</span></span><span class="sig-name descname"><span class="pre">User</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">login</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="s"><span class="pre">'str'</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">role</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="s"><span class="pre">'Role'</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vehicle_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="s"><span class="pre">'str</span> <span class="pre">|</span> <span class="pre">None'</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">display_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="s"><span class="pre">'str'</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/app/auth.html#User"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.auth.User" title="Link to this definition">¶</a></dt>
+<dd><dl class="py attribute">
+<dt class="sig sig-object py" id="app.auth.User.display_name">
+<span class="sig-name descname"><span class="pre">display_name</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">''</span></span><a class="headerlink" href="#app.auth.User.display_name" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.auth.User.login">
+<span class="sig-name descname"><span class="pre">login</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><a class="headerlink" href="#app.auth.User.login" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.auth.User.role">
+<span class="sig-name descname"><span class="pre">role</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Literal</span><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'dispatcher'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'driver'</span></span><span class="p"><span class="pre">]</span></span></span><a class="headerlink" href="#app.auth.User.role" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="app.auth.User.to_dict">
+<span class="sig-name descname"><span class="pre">to_dict</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/app/auth.html#User.to_dict"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.auth.User.to_dict" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.auth.User.vehicle_id">
+<span class="sig-name descname"><span class="pre">vehicle_id</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></span><a class="headerlink" href="#app.auth.User.vehicle_id" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.auth.authenticate">
+<span class="sig-prename descclassname"><span class="pre">app.auth.</span></span><span class="sig-name descname"><span class="pre">authenticate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">login</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">password</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></span><a class="reference internal" href="_modules/app/auth.html#authenticate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.auth.authenticate" title="Link to this definition">¶</a></dt>
+<dd><p>Проверка логина/пароля. Возвращает User или None.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.auth.current_user_optional">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.auth.</span></span><span class="sig-name descname"><span class="pre">current_user_optional</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Request</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">creds</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">HTTPAuthorizationCredentials</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Depends</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mt_token</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Cookie</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></span><a class="reference internal" href="_modules/app/auth.html#current_user_optional"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.auth.current_user_optional" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.auth.demo_accounts">
+<span class="sig-prename descclassname"><span class="pre">app.auth.</span></span><span class="sig-name descname"><span class="pre">demo_accounts</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/app/auth.html#demo_accounts"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.auth.demo_accounts" title="Link to this definition">¶</a></dt>
+<dd><p>Список демо-учёток для UI/жюри.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.auth.ensure_driver_access">
+<span class="sig-prename descclassname"><span class="pre">app.auth.</span></span><span class="sig-name descname"><span class="pre">ensure_driver_access</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">vehicle_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/app/auth.html#ensure_driver_access"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.auth.ensure_driver_access" title="Link to this definition">¶</a></dt>
+<dd><p>Диспетчер — любой ТС; водитель — только своё.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.auth.issue_token">
+<span class="sig-prename descclassname"><span class="pre">app.auth.</span></span><span class="sig-name descname"><span class="pre">issue_token</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">ttl_sec</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="_modules/app/auth.html#issue_token"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.auth.issue_token" title="Link to this definition">¶</a></dt>
+<dd><p>Подписанный токен: payload.b64.sig.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.auth.parse_token">
+<span class="sig-prename descclassname"><span class="pre">app.auth.</span></span><span class="sig-name descname"><span class="pre">parse_token</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">token</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></span><a class="reference internal" href="_modules/app/auth.html#parse_token"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.auth.parse_token" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.auth.require_dispatcher">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.auth.</span></span><span class="sig-name descname"><span class="pre">require_dispatcher</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Depends</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span></span><a class="reference internal" href="_modules/app/auth.html#require_dispatcher"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.auth.require_dispatcher" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.auth.require_user">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.auth.</span></span><span class="sig-name descname"><span class="pre">require_user</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Depends</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span></span><a class="reference internal" href="_modules/app/auth.html#require_user"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.auth.require_user" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<p id="module-app.api.routes">HTTP API Backend.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="app.api.routes.LoginIn">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">LoginIn</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/app/api/routes.html#LoginIn"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.api.routes.LoginIn" title="Link to this definition">¶</a></dt>
+<dd><dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.LoginIn.login">
+<span class="sig-name descname"><span class="pre">login</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">Ellipsis</span></span><a class="headerlink" href="#app.api.routes.LoginIn.login" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.LoginIn.password">
+<span class="sig-name descname"><span class="pre">password</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">Ellipsis</span></span><a class="headerlink" href="#app.api.routes.LoginIn.password" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="app.api.routes.MessageIn">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">MessageIn</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/app/api/routes.html#MessageIn"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.api.routes.MessageIn" title="Link to this definition">¶</a></dt>
+<dd><dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.MessageIn.text">
+<span class="sig-name descname"><span class="pre">text</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">Ellipsis</span></span><a class="headerlink" href="#app.api.routes.MessageIn.text" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.MessageIn.vehicle_id">
+<span class="sig-name descname"><span class="pre">vehicle_id</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><a class="headerlink" href="#app.api.routes.MessageIn.vehicle_id" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="app.api.routes.TelemetryIn">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">TelemetryIn</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/app/api/routes.html#TelemetryIn"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.api.routes.TelemetryIn" title="Link to this definition">¶</a></dt>
+<dd><p>Ручная подача кадра телематики (для жюри / тестов).</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.TelemetryIn.course">
+<span class="sig-name descname"><span class="pre">course</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></span><a class="headerlink" href="#app.api.routes.TelemetryIn.course" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.TelemetryIn.doors_open">
+<span class="sig-name descname"><span class="pre">doors_open</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">False</span></span><a class="headerlink" href="#app.api.routes.TelemetryIn.doors_open" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.TelemetryIn.ignition">
+<span class="sig-name descname"><span class="pre">ignition</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">True</span></span><a class="headerlink" href="#app.api.routes.TelemetryIn.ignition" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.TelemetryIn.lat">
+<span class="sig-name descname"><span class="pre">lat</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.api.routes.TelemetryIn.lat" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.TelemetryIn.lon">
+<span class="sig-name descname"><span class="pre">lon</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.api.routes.TelemetryIn.lon" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.TelemetryIn.route_id">
+<span class="sig-name descname"><span class="pre">route_id</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><a class="headerlink" href="#app.api.routes.TelemetryIn.route_id" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.TelemetryIn.schedule_delay_sec">
+<span class="sig-name descname"><span class="pre">schedule_delay_sec</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></span><a class="headerlink" href="#app.api.routes.TelemetryIn.schedule_delay_sec" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.TelemetryIn.speed_kmh">
+<span class="sig-name descname"><span class="pre">speed_kmh</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0</span></span><a class="headerlink" href="#app.api.routes.TelemetryIn.speed_kmh" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.TelemetryIn.stop_id">
+<span class="sig-name descname"><span class="pre">stop_id</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></span><a class="headerlink" href="#app.api.routes.TelemetryIn.stop_id" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.TelemetryIn.ts">
+<span class="sig-name descname"><span class="pre">ts</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></span><a class="headerlink" href="#app.api.routes.TelemetryIn.ts" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.TelemetryIn.vehicle_id">
+<span class="sig-name descname"><span class="pre">vehicle_id</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><a class="headerlink" href="#app.api.routes.TelemetryIn.vehicle_id" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="app.api.routes.WhatIfIn">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">WhatIfIn</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/app/api/routes.html#WhatIfIn"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.api.routes.WhatIfIn" title="Link to this definition">¶</a></dt>
+<dd><dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.WhatIfIn.extra_vehicles">
+<span class="sig-name descname"><span class="pre">extra_vehicles</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1</span></span><a class="headerlink" href="#app.api.routes.WhatIfIn.extra_vehicles" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.api.routes.WhatIfIn.route_id">
+<span class="sig-name descname"><span class="pre">route_id</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">Ellipsis</span></span><a class="headerlink" href="#app.api.routes.WhatIfIn.route_id" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.auth_demo_accounts">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">auth_demo_accounts</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.auth_demo_accounts" title="Link to this definition">¶</a></dt>
+<dd><p>Демо-логины для жюри (пароль у всех: demo).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.auth_login">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">auth_login</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">body</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.api.routes.LoginIn" title="app.api.routes.LoginIn"><span class="pre">LoginIn</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">response</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Response</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.auth_login" title="Link to this definition">¶</a></dt>
+<dd><p>Вход: диспетчер или водитель ТС.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.auth_logout">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">auth_logout</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">response</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Response</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.auth_logout" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.auth_me">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">auth_me</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Depends</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.auth_me" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.driver_view">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">driver_view</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Request</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vehicle_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Depends</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.driver_view" title="Link to this definition">¶</a></dt>
+<dd><p>Упрощённый вид для водителя: задержка, скорость, inbox.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.health">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">health</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Request</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.health" title="Link to this definition">¶</a></dt>
+<dd><p>Статус backend + режим деградации.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.incident_card">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">incident_card</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Request</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vehicle_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Depends</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.incident_card" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.incidents">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">incidents</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Request</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Depends</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.incidents" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.list_messages">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">list_messages</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Request</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vehicle_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Depends</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.list_messages" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.metrics">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">metrics</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Request</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.metrics" title="Link to this definition">¶</a></dt>
+<dd><p>Latency и пропускная способность (публично для health).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.post_telemetry">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">post_telemetry</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Request</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">body</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.api.routes.TelemetryIn" title="app.api.routes.TelemetryIn"><span class="pre">TelemetryIn</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.post_telemetry" title="Link to this definition">¶</a></dt>
+<dd><p>Приём одного кадра NDTP (JSON). Без auth — поток жюри/эмулятор.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.post_telemetry_batch">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">post_telemetry_batch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Request</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">body</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Body</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.post_telemetry_batch" title="Link to this definition">¶</a></dt>
+<dd><p>Пакетная загрузка исторического датасета / валидации.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.route_detail">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">route_detail</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Request</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">route_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Depends</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.route_detail" title="Link to this definition">¶</a></dt>
+<dd><p>Карточка маршрута: A/B, остановки, окна рейсов, live + история.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.routes">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">routes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Request</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Depends</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.routes" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.send_message">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">send_message</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Request</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">body</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.api.routes.MessageIn" title="app.api.routes.MessageIn"><span class="pre">MessageIn</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">_user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Depends</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.send_message" title="Link to this definition">¶</a></dt>
+<dd><p>Диспетчер → водитель: сообщение о задержке / рекомендации.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.snapshot">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">snapshot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Request</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Depends</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.snapshot" title="Link to this definition">¶</a></dt>
+<dd><p>Полный снимок для дашборда (polling fallback).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.stats_overview">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">stats_overview</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Request</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">period</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'day'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Depends</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.stats_overview" title="Link to this definition">¶</a></dt>
+<dd><p>Сводка по всем маршрутам: day | week | month | live.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.vehicles">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">vehicles</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Request</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Depends</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.vehicles" title="Link to this definition">¶</a></dt>
+<dd><p>Список ТС: диспетчер — все; водитель — только своё.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.api.routes.what_if">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.api.routes.</span></span><span class="sig-name descname"><span class="pre">what_if</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">fastapi.Request</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">body</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.api.routes.WhatIfIn" title="app.api.routes.WhatIfIn"><span class="pre">WhatIfIn</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">_user</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.auth.User" title="app.auth.User"><span class="pre">User</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">fastapi.Depends</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#app.api.routes.what_if" title="Link to this definition">¶</a></dt>
+<dd><p>What-if: влияние выпуска дополнительного ТС.</p>
+</dd></dl>
+
+<p id="module-app.services.orchestrator">Оркестратор: поток NDTP → признаки → ML → дашборд.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="app.services.orchestrator.Orchestrator">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.services.orchestrator.</span></span><span class="sig-name descname"><span class="pre">Orchestrator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">AppState</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/app/services/orchestrator.html#Orchestrator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.services.orchestrator.Orchestrator" title="Link to this definition">¶</a></dt>
+<dd><p>Связка поток → прогноз → алерты.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="app.services.orchestrator.Orchestrator.ingest_frame">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">ingest_frame</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">frame</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.ndtp.parser.NDTPFrame" title="app.ndtp.parser.NDTPFrame"><span class="pre">NDTPFrame</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/app/services/orchestrator.html#Orchestrator.ingest_frame"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.services.orchestrator.Orchestrator.ingest_frame" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="app.services.orchestrator.Orchestrator.run">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">run</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/app/services/orchestrator.html#Orchestrator.run"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.services.orchestrator.Orchestrator.run" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="app.services.orchestrator.Orchestrator.stop">
+<span class="sig-name descname"><span class="pre">stop</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/app/services/orchestrator.html#Orchestrator.stop"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.services.orchestrator.Orchestrator.stop" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="app.services.orchestrator.Orchestrator.what_if">
+<span class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">what_if</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">route_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">extra_vehicles</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span></span></span><a class="reference internal" href="_modules/app/services/orchestrator.html#Orchestrator.what_if"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.services.orchestrator.Orchestrator.what_if" title="Link to this definition">¶</a></dt>
+<dd><p>What-if: оценка влияния доп. ТС на график маршрута.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.services.orchestrator.infer_pattern">
+<span class="sig-prename descclassname"><span class="pre">app.services.orchestrator.</span></span><span class="sig-name descname"><span class="pre">infer_pattern</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">feat</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.features.engine.VehicleFeatures" title="app.features.engine.VehicleFeatures"><span class="pre">VehicleFeatures</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/app/services/orchestrator.html#infer_pattern"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.services.orchestrator.infer_pattern" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.services.orchestrator.recommendation">
+<span class="sig-prename descclassname"><span class="pre">app.services.orchestrator.</span></span><span class="sig-name descname"><span class="pre">recommendation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pattern</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">risk</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">suggested_speed</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="_modules/app/services/orchestrator.html#recommendation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.services.orchestrator.recommendation" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.services.orchestrator.risk_level">
+<span class="sig-prename descclassname"><span class="pre">app.services.orchestrator.</span></span><span class="sig-name descname"><span class="pre">risk_level</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prob</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">delay_sec</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="_modules/app/services/orchestrator.html#risk_level"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.services.orchestrator.risk_level" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<p id="module-app.features.engine">Расчёт производных признаков и map-matching.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="app.features.engine.FeatureEngine">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.features.engine.</span></span><span class="sig-name descname"><span class="pre">FeatureEngine</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">segments</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#app.features.engine.RouteSegment" title="app.features.engine.RouteSegment"><span class="pre">RouteSegment</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">history_len</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">24</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/app/features/engine.html#FeatureEngine"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.features.engine.FeatureEngine" title="Link to this definition">¶</a></dt>
+<dd><p>Онлайн-расчёт признаков + простой map matching.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="app.features.engine.FeatureEngine.match_segment">
+<span class="sig-name descname"><span class="pre">match_segment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">frame</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.ndtp.parser.NDTPFrame" title="app.ndtp.parser.NDTPFrame"><span class="pre">NDTPFrame</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">tuple</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#app.features.engine.RouteSegment" title="app.features.engine.RouteSegment"><span class="pre">RouteSegment</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/app/features/engine.html#FeatureEngine.match_segment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.features.engine.FeatureEngine.match_segment" title="Link to this definition">¶</a></dt>
+<dd><p>Ближайший сегмент маршрута (map matching по haversine).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="app.features.engine.FeatureEngine.update">
+<span class="sig-name descname"><span class="pre">update</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">frame</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#app.ndtp.parser.NDTPFrame" title="app.ndtp.parser.NDTPFrame"><span class="pre">NDTPFrame</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#app.features.engine.VehicleFeatures" title="app.features.engine.VehicleFeatures"><span class="pre">VehicleFeatures</span></a></span></span><a class="reference internal" href="_modules/app/features/engine.html#FeatureEngine.update"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.features.engine.FeatureEngine.update" title="Link to this definition">¶</a></dt>
+<dd><p>Обновляет историю ТС и возвращает вектор признаков.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="app.features.engine.RouteSegment">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.features.engine.</span></span><span class="sig-name descname"><span class="pre">RouteSegment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">segment_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">route_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lat</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lon</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">next_lat</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">next_lon</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expected_speed_kmh</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">22.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/app/features/engine.html#RouteSegment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.features.engine.RouteSegment" title="Link to this definition">¶</a></dt>
+<dd><p>Сегмент маршрутной сети.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.RouteSegment.expected_speed_kmh">
+<span class="sig-name descname"><span class="pre">expected_speed_kmh</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">22.0</span></span><a class="headerlink" href="#app.features.engine.RouteSegment.expected_speed_kmh" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.RouteSegment.lat">
+<span class="sig-name descname"><span class="pre">lat</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.features.engine.RouteSegment.lat" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.RouteSegment.lon">
+<span class="sig-name descname"><span class="pre">lon</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.features.engine.RouteSegment.lon" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.RouteSegment.name">
+<span class="sig-name descname"><span class="pre">name</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><a class="headerlink" href="#app.features.engine.RouteSegment.name" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.RouteSegment.next_lat">
+<span class="sig-name descname"><span class="pre">next_lat</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.features.engine.RouteSegment.next_lat" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.RouteSegment.next_lon">
+<span class="sig-name descname"><span class="pre">next_lon</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.features.engine.RouteSegment.next_lon" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.RouteSegment.route_id">
+<span class="sig-name descname"><span class="pre">route_id</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><a class="headerlink" href="#app.features.engine.RouteSegment.route_id" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.RouteSegment.segment_id">
+<span class="sig-name descname"><span class="pre">segment_id</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><a class="headerlink" href="#app.features.engine.RouteSegment.segment_id" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.features.engine.</span></span><span class="sig-name descname"><span class="pre">VehicleFeatures</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vehicle_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">route_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lat</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lon</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">speed_kmh</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">current_delay_sec</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">segment_avg_speed_kmh</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dwell_sec</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">speed_drop_ratio</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">doors_open_ratio</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">progress_ratio</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">matched_segment_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">matched_segment_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_to_segment_m</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ts</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seq_speeds</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seq_delays</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">doors_open</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">track</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list[dict[str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">float]]</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;factory&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/app/features/engine.html#VehicleFeatures"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.features.engine.VehicleFeatures" title="Link to this definition">¶</a></dt>
+<dd><p>Признаки для ML на горизонте 10–15 мин.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.current_delay_sec">
+<span class="sig-name descname"><span class="pre">current_delay_sec</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.current_delay_sec" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.dist_to_segment_m">
+<span class="sig-name descname"><span class="pre">dist_to_segment_m</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.dist_to_segment_m" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.doors_open">
+<span class="sig-name descname"><span class="pre">doors_open</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">False</span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.doors_open" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.doors_open_ratio">
+<span class="sig-name descname"><span class="pre">doors_open_ratio</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.doors_open_ratio" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.ds_features">
+<span class="sig-name descname"><span class="pre">ds_features</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">horizon_sec</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">780.0</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/app/features/engine.html#VehicleFeatures.ds_features"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.features.engine.VehicleFeatures.ds_features" title="Link to this definition">¶</a></dt>
+<dd><p>Вектор FEATURE_COLS для delay_catboost_ds (parity с сабмитом).</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.dwell_sec">
+<span class="sig-name descname"><span class="pre">dwell_sec</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.dwell_sec" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.lat">
+<span class="sig-name descname"><span class="pre">lat</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.lat" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.lon">
+<span class="sig-name descname"><span class="pre">lon</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.lon" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.matched_segment_id">
+<span class="sig-name descname"><span class="pre">matched_segment_id</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.matched_segment_id" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.matched_segment_name">
+<span class="sig-name descname"><span class="pre">matched_segment_name</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.matched_segment_name" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.progress_ratio">
+<span class="sig-name descname"><span class="pre">progress_ratio</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.progress_ratio" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.route_id">
+<span class="sig-name descname"><span class="pre">route_id</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.route_id" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.segment_avg_speed_kmh">
+<span class="sig-name descname"><span class="pre">segment_avg_speed_kmh</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.segment_avg_speed_kmh" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.seq_delays">
+<span class="sig-name descname"><span class="pre">seq_delays</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.seq_delays" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.seq_speeds">
+<span class="sig-name descname"><span class="pre">seq_speeds</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.seq_speeds" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.speed_drop_ratio">
+<span class="sig-name descname"><span class="pre">speed_drop_ratio</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.speed_drop_ratio" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.speed_kmh">
+<span class="sig-name descname"><span class="pre">speed_kmh</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.speed_kmh" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.tabular">
+<span class="sig-name descname"><span class="pre">tabular</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">float</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/app/features/engine.html#VehicleFeatures.tabular"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.features.engine.VehicleFeatures.tabular" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.track">
+<span class="sig-name descname"><span class="pre">track</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.track" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.ts">
+<span class="sig-name descname"><span class="pre">ts</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.ts" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.features.engine.VehicleFeatures.vehicle_id">
+<span class="sig-name descname"><span class="pre">vehicle_id</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><a class="headerlink" href="#app.features.engine.VehicleFeatures.vehicle_id" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.features.engine.haversine_m">
+<span class="sig-prename descclassname"><span class="pre">app.features.engine.</span></span><span class="sig-name descname"><span class="pre">haversine_m</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lat1</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lon1</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lat2</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lon2</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">float</span></span></span><a class="reference internal" href="_modules/app/features/engine.html#haversine_m"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.features.engine.haversine_m" title="Link to this definition">¶</a></dt>
+<dd><p>Расстояние между двумя точками в метрах.</p>
+</dd></dl>
+
+<p id="module-app.ndtp.parser">Парсер телематики NDTP (упрощённый JSON/бинарный кадр для хакатона).</p>
+<p>Формат эмулятора: JSON Lines с полями, совместимыми с типичным NDTP-пейлоадом
+(imei/uid, lat, lon, speed, course, doors, ignition, ts).</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="app.ndtp.parser.NDTPFrame">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">app.ndtp.parser.</span></span><span class="sig-name descname"><span class="pre">NDTPFrame</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vehicle_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">route_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lat</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lon</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">speed_kmh</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">course</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">doors_open</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ignition</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ts</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stop_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">schedule_delay_sec</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/app/ndtp/parser.html#NDTPFrame"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.ndtp.parser.NDTPFrame" title="Link to this definition">¶</a></dt>
+<dd><p>Один кадр телематики ТС.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.ndtp.parser.NDTPFrame.course">
+<span class="sig-name descname"><span class="pre">course</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.ndtp.parser.NDTPFrame.course" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.ndtp.parser.NDTPFrame.doors_open">
+<span class="sig-name descname"><span class="pre">doors_open</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></span><a class="headerlink" href="#app.ndtp.parser.NDTPFrame.doors_open" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.ndtp.parser.NDTPFrame.ignition">
+<span class="sig-name descname"><span class="pre">ignition</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></span><a class="headerlink" href="#app.ndtp.parser.NDTPFrame.ignition" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.ndtp.parser.NDTPFrame.lat">
+<span class="sig-name descname"><span class="pre">lat</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.ndtp.parser.NDTPFrame.lat" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.ndtp.parser.NDTPFrame.lon">
+<span class="sig-name descname"><span class="pre">lon</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.ndtp.parser.NDTPFrame.lon" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.ndtp.parser.NDTPFrame.route_id">
+<span class="sig-name descname"><span class="pre">route_id</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><a class="headerlink" href="#app.ndtp.parser.NDTPFrame.route_id" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.ndtp.parser.NDTPFrame.schedule_delay_sec">
+<span class="sig-name descname"><span class="pre">schedule_delay_sec</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></span><a class="headerlink" href="#app.ndtp.parser.NDTPFrame.schedule_delay_sec" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.ndtp.parser.NDTPFrame.speed_kmh">
+<span class="sig-name descname"><span class="pre">speed_kmh</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.ndtp.parser.NDTPFrame.speed_kmh" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.ndtp.parser.NDTPFrame.stop_id">
+<span class="sig-name descname"><span class="pre">stop_id</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></span><a class="headerlink" href="#app.ndtp.parser.NDTPFrame.stop_id" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="app.ndtp.parser.NDTPFrame.to_dict">
+<span class="sig-name descname"><span class="pre">to_dict</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/app/ndtp/parser.html#NDTPFrame.to_dict"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.ndtp.parser.NDTPFrame.to_dict" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.ndtp.parser.NDTPFrame.ts">
+<span class="sig-name descname"><span class="pre">ts</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#app.ndtp.parser.NDTPFrame.ts" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="app.ndtp.parser.NDTPFrame.vehicle_id">
+<span class="sig-name descname"><span class="pre">vehicle_id</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><a class="headerlink" href="#app.ndtp.parser.NDTPFrame.vehicle_id" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.ndtp.parser.frame_from_dict">
+<span class="sig-prename descclassname"><span class="pre">app.ndtp.parser.</span></span><span class="sig-name descname"><span class="pre">frame_from_dict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">obj</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#app.ndtp.parser.NDTPFrame" title="app.ndtp.parser.NDTPFrame"><span class="pre">NDTPFrame</span></a></span></span><a class="reference internal" href="_modules/app/ndtp/parser.html#frame_from_dict"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.ndtp.parser.frame_from_dict" title="Link to this definition">¶</a></dt>
+<dd><p>Маппинг словаря → NDTPFrame с нормализацией имён полей.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.ndtp.parser.parse_binary_frame">
+<span class="sig-prename descclassname"><span class="pre">app.ndtp.parser.</span></span><span class="sig-name descname"><span class="pre">parse_binary_frame</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">buf</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#app.ndtp.parser.NDTPFrame" title="app.ndtp.parser.NDTPFrame"><span class="pre">NDTPFrame</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></span><a class="reference internal" href="_modules/app/ndtp/parser.html#parse_binary_frame"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.ndtp.parser.parse_binary_frame" title="Link to this definition">¶</a></dt>
+<dd><p>Минимальный бинарный кадр: magic(2)=0xND + float fields.</p>
+<dl class="simple">
+<dt>Layout (little-endian):</dt><dd><p>magic u16=0x4E44 (‘ND’), vehicle_id u32, route_id u16,
+lat f32, lon f32, speed f32, course f32, flags u8, ts f64</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="app.ndtp.parser.parse_json_line">
+<span class="sig-prename descclassname"><span class="pre">app.ndtp.parser.</span></span><span class="sig-name descname"><span class="pre">parse_json_line</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">line</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">bytes</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#app.ndtp.parser.NDTPFrame" title="app.ndtp.parser.NDTPFrame"><span class="pre">NDTPFrame</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></span><a class="reference internal" href="_modules/app/ndtp/parser.html#parse_json_line"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#app.ndtp.parser.parse_json_line" title="Link to this definition">¶</a></dt>
+<dd><p>Парсит одну JSON-строку потока.</p>
+</dd></dl>
+
+</section>
+<section id="module-feature_schema">
+<span id="ml"></span><h2>ML<a class="headerlink" href="#module-feature_schema" title="Link to this heading">¶</a></h2>
+<p>Единая схема признаков DS CatBoost (офлайн сабмит ≡ онлайн /predict).</p>
+<p id="module-models.ensemble">Ансамбль: приоритет DS CatBoost (delay_catboost_ds) + LSTM fallback.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="models.ensemble.EnsemblePredictor">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">models.ensemble.</span></span><span class="sig-name descname"><span class="pre">EnsemblePredictor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ds_model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">legacy_cb</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">torch_model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#models.ensemble.TelemetryLSTM" title="models.ensemble.TelemetryLSTM"><span class="pre">TelemetryLSTM</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'cpu'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">onnx_session</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/models/ensemble.html#EnsemblePredictor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#models.ensemble.EnsemblePredictor" title="Link to this definition">¶</a></dt>
+<dd><p>DS CatBoost — основной предикт (тот же, что submission). LSTM — доп. сигнал.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="models.ensemble.EnsemblePredictor.describe">
+<span class="sig-name descname"><span class="pre">describe</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/models/ensemble.html#EnsemblePredictor.describe"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#models.ensemble.EnsemblePredictor.describe" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="models.ensemble.EnsemblePredictor.load_or_bootstrap">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">load_or_bootstrap</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#models.ensemble.EnsemblePredictor" title="models.ensemble.EnsemblePredictor"><span class="pre">EnsemblePredictor</span></a></span></span><a class="reference internal" href="_modules/models/ensemble.html#EnsemblePredictor.load_or_bootstrap"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#models.ensemble.EnsemblePredictor.load_or_bootstrap" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="models.ensemble.EnsemblePredictor.predict">
+<span class="sig-name descname"><span class="pre">predict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">features</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seq_speeds</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seq_delays</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">horizon_sec</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">780</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/models/ensemble.html#EnsemblePredictor.predict"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#models.ensemble.EnsemblePredictor.predict" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="models.ensemble.TelemetryLSTM">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">models.ensemble.</span></span><span class="sig-name descname"><span class="pre">TelemetryLSTM</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/models/ensemble.html#TelemetryLSTM"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#models.ensemble.TelemetryLSTM" title="Link to this definition">¶</a></dt>
+<dd><dl class="py method">
+<dt class="sig sig-object py" id="models.ensemble.TelemetryLSTM.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">torch.Tensor</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">torch.Tensor</span></span></span><a class="reference internal" href="_modules/models/ensemble.html#TelemetryLSTM.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#models.ensemble.TelemetryLSTM.forward" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="#">MosTrans Predict</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="#">Documentation overview</a><ul>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, MosTrans Hackathon.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/index.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

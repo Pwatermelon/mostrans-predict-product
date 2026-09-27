@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>app.services.orchestrator &#8212; MosTrans Predict  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for app.services.orchestrator</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Оркестратор: поток NDTP → признаки → ML → дашборд."""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">httpx</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">app.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">app.features.ds_schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">suggested_speed_kmh</span><span class="p">,</span> <span class="n">vehicle_status</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">app.features.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">FeatureEngine</span><span class="p">,</span> <span class="n">RouteSegment</span><span class="p">,</span> <span class="n">VehicleFeatures</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">app.ndtp.parser</span><span class="w"> </span><span class="kn">import</span> <span class="n">NDTPFrame</span><span class="p">,</span> <span class="n">parse_json_line</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">app.services.route_stats</span><span class="w"> </span><span class="kn">import</span> <span class="n">RouteStatsStore</span><span class="p">,</span> <span class="n">load_routes_catalog</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">app.services.state</span><span class="w"> </span><span class="kn">import</span> <span class="n">AppState</span><span class="p">,</span> <span class="n">Incident</span><span class="p">,</span> <span class="n">VehicleState</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">"mostrans.orchestrator"</span><span class="p">)</span>
+
+<span class="n">CAUSE_MAP</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"speed_drop"</span><span class="p">:</span> <span class="s2">"Аномальное снижение скорости на подходе к перекрёстку"</span><span class="p">,</span>
+    <span class="s2">"long_dwell"</span><span class="p">:</span> <span class="s2">"Длительная посадка / простой на остановке"</span><span class="p">,</span>
+    <span class="s2">"congestion"</span><span class="p">:</span> <span class="s2">"Затор на сегменте маршрута"</span><span class="p">,</span>
+    <span class="s2">"schedule_drift"</span><span class="p">:</span> <span class="s2">"Накопившееся отклонение от нитки графика"</span><span class="p">,</span>
+    <span class="s2">"doors"</span><span class="p">:</span> <span class="s2">"Частые открытия дверей вне остановок"</span><span class="p">,</span>
+    <span class="s2">"normal"</span><span class="p">:</span> <span class="s2">"Без выраженного паттерна сбоя"</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<div class="viewcode-block" id="risk_level">
+<a class="viewcode-back" href="../../../index.html#app.services.orchestrator.risk_level">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">risk_level</span><span class="p">(</span><span class="n">prob</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">delay_sec</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">prob</span> <span class="o">&gt;=</span> <span class="mf">0.65</span> <span class="ow">or</span> <span class="n">delay_sec</span> <span class="o">&gt;=</span> <span class="mi">180</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"red"</span>
+    <span class="k">if</span> <span class="n">prob</span> <span class="o">&gt;=</span> <span class="mf">0.40</span> <span class="ow">or</span> <span class="n">delay_sec</span> <span class="o">&gt;=</span> <span class="mi">90</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"yellow"</span>
+    <span class="k">return</span> <span class="s2">"green"</span></div>
+
+
+
+<div class="viewcode-block" id="infer_pattern">
+<a class="viewcode-back" href="../../../index.html#app.services.orchestrator.infer_pattern">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">infer_pattern</span><span class="p">(</span><span class="n">feat</span><span class="p">:</span> <span class="n">VehicleFeatures</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="n">feat</span><span class="o">.</span><span class="n">dwell_sec</span> <span class="o">&gt;=</span> <span class="mi">45</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"long_dwell"</span><span class="p">,</span> <span class="n">CAUSE_MAP</span><span class="p">[</span><span class="s2">"long_dwell"</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">feat</span><span class="o">.</span><span class="n">speed_drop_ratio</span> <span class="o">&gt;=</span> <span class="mf">0.55</span> <span class="ow">and</span> <span class="n">feat</span><span class="o">.</span><span class="n">speed_kmh</span> <span class="o">&lt;</span> <span class="mi">12</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"speed_drop"</span><span class="p">,</span> <span class="n">CAUSE_MAP</span><span class="p">[</span><span class="s2">"speed_drop"</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">feat</span><span class="o">.</span><span class="n">segment_avg_speed_kmh</span> <span class="o">&lt;</span> <span class="mi">10</span> <span class="ow">and</span> <span class="n">feat</span><span class="o">.</span><span class="n">speed_kmh</span> <span class="o">&lt;</span> <span class="mi">15</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"congestion"</span><span class="p">,</span> <span class="n">CAUSE_MAP</span><span class="p">[</span><span class="s2">"congestion"</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">feat</span><span class="o">.</span><span class="n">doors_open_ratio</span> <span class="o">&gt;</span> <span class="mf">0.4</span> <span class="ow">and</span> <span class="n">feat</span><span class="o">.</span><span class="n">speed_kmh</span> <span class="o">&gt;</span> <span class="mi">5</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"doors"</span><span class="p">,</span> <span class="n">CAUSE_MAP</span><span class="p">[</span><span class="s2">"doors"</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">feat</span><span class="o">.</span><span class="n">current_delay_sec</span> <span class="o">&gt;=</span> <span class="mi">60</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"schedule_drift"</span><span class="p">,</span> <span class="n">CAUSE_MAP</span><span class="p">[</span><span class="s2">"schedule_drift"</span><span class="p">]</span>
+    <span class="k">return</span> <span class="s2">"normal"</span><span class="p">,</span> <span class="n">CAUSE_MAP</span><span class="p">[</span><span class="s2">"normal"</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="recommendation">
+<a class="viewcode-back" href="../../../index.html#app.services.orchestrator.recommendation">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">recommendation</span><span class="p">(</span><span class="n">pattern</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">risk</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">suggested_speed</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">risk</span> <span class="o">==</span> <span class="s2">"green"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"Контроль по расписанию, действий не требуется"</span>
+    <span class="n">tips</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"long_dwell"</span><span class="p">:</span> <span class="s2">"Ускорить посадку / связаться с водителем; рассмотреть пропуск малозагруженной остановки"</span><span class="p">,</span>
+        <span class="s2">"speed_drop"</span><span class="p">:</span> <span class="s2">"Проверить светофорный объект; при необходимости — приоритет ТС"</span><span class="p">,</span>
+        <span class="s2">"congestion"</span><span class="p">:</span> <span class="s2">"Оценить объезд; выпустить резервное ТС на хвост маршрута"</span><span class="p">,</span>
+        <span class="s2">"doors"</span><span class="p">:</span> <span class="s2">"Проверить корректность датчика дверей и режим посадки"</span><span class="p">,</span>
+        <span class="s2">"schedule_drift"</span><span class="p">:</span> <span class="s2">"Скорректировать интервал; what-if: доп. ТС"</span><span class="p">,</span>
+        <span class="s2">"normal"</span><span class="p">:</span> <span class="s2">"Наблюдение; перепроверить через 2–3 мин"</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">base</span> <span class="o">=</span> <span class="n">tips</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="n">tips</span><span class="p">[</span><span class="s2">"normal"</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">suggested_speed</span> <span class="ow">and</span> <span class="n">risk</span> <span class="o">!=</span> <span class="s2">"green"</span><span class="p">:</span>
+        <span class="n">base</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">" · рекоменд. ср. скорость ≈ </span><span class="si">{</span><span class="n">suggested_speed</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> км/ч"</span>
+    <span class="k">return</span> <span class="n">base</span></div>
+
+
+
+<div class="viewcode-block" id="Orchestrator">
+<a class="viewcode-back" href="../../../index.html#app.services.orchestrator.Orchestrator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Orchestrator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Связка поток → прогноз → алерты."""</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">:</span> <span class="n">AppState</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">=</span> <span class="n">state</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_stop</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reader_task</span><span class="p">:</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">Task</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">segments</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_load_segments</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">engine</span> <span class="o">=</span> <span class="n">FeatureEngine</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">segments</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_features</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">VehicleFeatures</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_frame_queue</span><span class="p">:</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">Queue</span><span class="p">[</span><span class="n">NDTPFrame</span><span class="p">]</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">Queue</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">5000</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">catalog</span> <span class="o">=</span> <span class="n">load_routes_catalog</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">data_dir</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stats</span> <span class="o">=</span> <span class="n">RouteStatsStore</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">catalog</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">seg</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">segments</span><span class="p">:</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">routes</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span>
+                <span class="n">seg</span><span class="o">.</span><span class="n">route_id</span><span class="p">,</span>
+                <span class="p">{</span>
+                    <span class="s2">"route_id"</span><span class="p">:</span> <span class="n">seg</span><span class="o">.</span><span class="n">route_id</span><span class="p">,</span>
+                    <span class="s2">"name"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"Маршрут </span><span class="si">{</span><span class="n">seg</span><span class="o">.</span><span class="n">route_id</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                    <span class="s2">"risk_level"</span><span class="p">:</span> <span class="s2">"green"</span><span class="p">,</span>
+                    <span class="s2">"max_prob"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+                    <span class="s2">"points"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="p">},</span>
+            <span class="p">)</span>
+            <span class="n">r</span><span class="p">[</span><span class="s2">"points"</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="s2">"segment_id"</span><span class="p">:</span> <span class="n">seg</span><span class="o">.</span><span class="n">segment_id</span><span class="p">,</span>
+                    <span class="s2">"name"</span><span class="p">:</span> <span class="n">seg</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                    <span class="s2">"lat"</span><span class="p">:</span> <span class="n">seg</span><span class="o">.</span><span class="n">lat</span><span class="p">,</span>
+                    <span class="s2">"lon"</span><span class="p">:</span> <span class="n">seg</span><span class="o">.</span><span class="n">lon</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_load_segments</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">RouteSegment</span><span class="p">]:</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">data_dir</span><span class="p">)</span> <span class="o">/</span> <span class="s2">"routes.json"</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="c1"># fallback — центр Москвы demo</span>
+            <span class="k">return</span> <span class="p">[</span>
+                <span class="n">RouteSegment</span><span class="p">(</span><span class="s2">"S1"</span><span class="p">,</span> <span class="s2">"M1"</span><span class="p">,</span> <span class="s2">"Тверская"</span><span class="p">,</span> <span class="mf">55.757</span><span class="p">,</span> <span class="mf">37.615</span><span class="p">,</span> <span class="mf">55.760</span><span class="p">,</span> <span class="mf">37.620</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>
+                <span class="n">RouteSegment</span><span class="p">(</span><span class="s2">"S2"</span><span class="p">,</span> <span class="s2">"M1"</span><span class="p">,</span> <span class="s2">"Пушкинская"</span><span class="p">,</span> <span class="mf">55.765</span><span class="p">,</span> <span class="mf">37.605</span><span class="p">,</span> <span class="mf">55.770</span><span class="p">,</span> <span class="mf">37.600</span><span class="p">,</span> <span class="mi">18</span><span class="p">),</span>
+                <span class="n">RouteSegment</span><span class="p">(</span><span class="s2">"S3"</span><span class="p">,</span> <span class="s2">"M2"</span><span class="p">,</span> <span class="s2">"Арбат"</span><span class="p">,</span> <span class="mf">55.752</span><span class="p">,</span> <span class="mf">37.591</span><span class="p">,</span> <span class="mf">55.750</span><span class="p">,</span> <span class="mf">37.585</span><span class="p">,</span> <span class="mi">22</span><span class="p">),</span>
+            <span class="p">]</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">))</span>
+        <span class="n">out</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">RouteSegment</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">data</span><span class="p">[</span><span class="s2">"routes"</span><span class="p">]:</span>
+            <span class="n">pts</span> <span class="o">=</span> <span class="n">r</span><span class="p">[</span><span class="s2">"stops"</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">pts</span><span class="p">):</span>
+                <span class="n">nxt</span> <span class="o">=</span> <span class="n">pts</span><span class="p">[(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">pts</span><span class="p">)]</span>
+                <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">RouteSegment</span><span class="p">(</span>
+                        <span class="n">segment_id</span><span class="o">=</span><span class="n">p</span><span class="p">[</span><span class="s2">"id"</span><span class="p">],</span>
+                        <span class="n">route_id</span><span class="o">=</span><span class="n">r</span><span class="p">[</span><span class="s2">"id"</span><span class="p">],</span>
+                        <span class="n">name</span><span class="o">=</span><span class="n">p</span><span class="p">[</span><span class="s2">"name"</span><span class="p">],</span>
+                        <span class="n">lat</span><span class="o">=</span><span class="n">p</span><span class="p">[</span><span class="s2">"lat"</span><span class="p">],</span>
+                        <span class="n">lon</span><span class="o">=</span><span class="n">p</span><span class="p">[</span><span class="s2">"lon"</span><span class="p">],</span>
+                        <span class="n">next_lat</span><span class="o">=</span><span class="n">nxt</span><span class="p">[</span><span class="s2">"lat"</span><span class="p">],</span>
+                        <span class="n">next_lon</span><span class="o">=</span><span class="n">nxt</span><span class="p">[</span><span class="s2">"lon"</span><span class="p">],</span>
+                        <span class="n">expected_speed_kmh</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expected_speed_kmh"</span><span class="p">,</span> <span class="mi">22</span><span class="p">)),</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">routes</span><span class="p">[</span><span class="n">r</span><span class="p">[</span><span class="s2">"id"</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">"route_id"</span><span class="p">:</span> <span class="n">r</span><span class="p">[</span><span class="s2">"id"</span><span class="p">],</span>
+                <span class="s2">"name"</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">,</span> <span class="n">r</span><span class="p">[</span><span class="s2">"id"</span><span class="p">]),</span>
+                <span class="s2">"risk_level"</span><span class="p">:</span> <span class="s2">"green"</span><span class="p">,</span>
+                <span class="s2">"max_prob"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+                <span class="s2">"points"</span><span class="p">:</span> <span class="p">[</span>
+                    <span class="p">{</span><span class="s2">"segment_id"</span><span class="p">:</span> <span class="n">p</span><span class="p">[</span><span class="s2">"id"</span><span class="p">],</span> <span class="s2">"name"</span><span class="p">:</span> <span class="n">p</span><span class="p">[</span><span class="s2">"name"</span><span class="p">],</span> <span class="s2">"lat"</span><span class="p">:</span> <span class="n">p</span><span class="p">[</span><span class="s2">"lat"</span><span class="p">],</span> <span class="s2">"lon"</span><span class="p">:</span> <span class="n">p</span><span class="p">[</span><span class="s2">"lon"</span><span class="p">]}</span>
+                    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pts</span>
+                <span class="p">],</span>
+            <span class="p">}</span>
+        <span class="k">return</span> <span class="n">out</span>
+
+<div class="viewcode-block" id="Orchestrator.stop">
+<a class="viewcode-back" href="../../../index.html#app.services.orchestrator.Orchestrator.stop">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">stop</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_stop</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="Orchestrator.ingest_frame">
+<a class="viewcode-back" href="../../../index.html#app.services.orchestrator.Orchestrator.ingest_frame">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">ingest_frame</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">frame</span><span class="p">:</span> <span class="n">NDTPFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_frame_queue</span><span class="o">.</span><span class="n">put_nowait</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">QueueFull</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_frame_queue</span><span class="o">.</span><span class="n">get_nowait</span><span class="p">()</span>
+            <span class="k">except</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">QueueEmpty</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_frame_queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Orchestrator.run">
+<a class="viewcode-back" href="../../../index.html#app.services.orchestrator.Orchestrator.run">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reader_task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tcp_reader</span><span class="p">())</span>
+        <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_historical_fallback_loop</span><span class="p">())</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stop</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">frame</span> <span class="o">=</span> <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">wait_for</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_frame_queue</span><span class="o">.</span><span class="n">get</span><span class="p">(),</span> <span class="n">timeout</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+                <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_frame</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">TimeoutError</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_check_degrade</span><span class="p">()</span>
+                <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">broadcast</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">"process error"</span><span class="p">)</span>
+                <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.2</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_check_degrade</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">now</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="n">last</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">metrics</span><span class="o">.</span><span class="n">last_frame_ts</span>
+        <span class="k">if</span> <span class="n">last</span> <span class="ow">and</span> <span class="n">now</span> <span class="o">-</span> <span class="n">last</span> <span class="o">&gt;</span> <span class="n">settings</span><span class="o">.</span><span class="n">degrade_after_sec</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">metrics</span><span class="o">.</span><span class="n">degraded</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">metrics</span><span class="o">.</span><span class="n">mode</span> <span class="o">=</span> <span class="s2">"degraded"</span>
+        <span class="k">elif</span> <span class="n">last</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">metrics</span><span class="o">.</span><span class="n">degraded</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">metrics</span><span class="o">.</span><span class="n">mode</span> <span class="o">=</span> <span class="s2">"live"</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_historical_fallback_loop</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""При обрыве связи — крутим последний известный снимок без падения."""</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">data_dir</span><span class="p">)</span> <span class="o">/</span> <span class="s2">"sample_telemetry.jsonl"</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stop</span><span class="p">:</span>
+            <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">metrics</span><span class="o">.</span><span class="n">degraded</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+                <span class="k">continue</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">metrics</span><span class="o">.</span><span class="n">mode</span> <span class="o">=</span> <span class="s2">"historical"</span>
+            <span class="c1"># лёгкий replay последних строк</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">lines</span> <span class="o">=</span> <span class="n">path</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()[</span><span class="o">-</span><span class="mi">40</span><span class="p">:]</span>
+                <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">lines</span><span class="p">:</span>
+                    <span class="n">fr</span> <span class="o">=</span> <span class="n">parse_json_line</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">fr</span><span class="p">:</span>
+                        <span class="n">fr</span><span class="o">.</span><span class="n">ts</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+                        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">ingest_frame</span><span class="p">(</span><span class="n">fr</span><span class="p">)</span>
+                    <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.05</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">"historical replay failed"</span><span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_tcp_reader</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Подключение к эмулятору NDTP (TCP JSONL) с реконнектом."""</span>
+        <span class="n">host</span><span class="p">,</span> <span class="n">port</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">emulator_host</span><span class="p">,</span> <span class="n">settings</span><span class="o">.</span><span class="n">emulator_port</span>
+        <span class="n">backoff</span> <span class="o">=</span> <span class="mf">0.5</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stop</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">reader</span><span class="p">,</span> <span class="n">writer</span> <span class="o">=</span> <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">open_connection</span><span class="p">(</span><span class="n">host</span><span class="p">,</span> <span class="n">port</span><span class="p">)</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Connected to NDTP emulator </span><span class="si">%s</span><span class="s2">:</span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">host</span><span class="p">,</span> <span class="n">port</span><span class="p">)</span>
+                <span class="n">backoff</span> <span class="o">=</span> <span class="mf">0.5</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">metrics</span><span class="o">.</span><span class="n">degraded</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">metrics</span><span class="o">.</span><span class="n">mode</span> <span class="o">=</span> <span class="s2">"live"</span>
+                <span class="k">while</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stop</span><span class="p">:</span>
+                    <span class="n">line</span> <span class="o">=</span> <span class="k">await</span> <span class="n">reader</span><span class="o">.</span><span class="n">readline</span><span class="p">()</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span><span class="p">:</span>
+                        <span class="k">break</span>
+                    <span class="n">frame</span> <span class="o">=</span> <span class="n">parse_json_line</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">frame</span><span class="p">:</span>
+                        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">ingest_frame</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
+                <span class="n">writer</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">await</span> <span class="n">writer</span><span class="o">.</span><span class="n">wait_closed</span><span class="p">()</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">pass</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"NDTP connection lost: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">metrics</span><span class="o">.</span><span class="n">degraded</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">metrics</span><span class="o">.</span><span class="n">mode</span> <span class="o">=</span> <span class="s2">"degraded"</span>
+                <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">backoff</span><span class="p">)</span>
+                <span class="n">backoff</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">8.0</span><span class="p">,</span> <span class="n">backoff</span> <span class="o">*</span> <span class="mf">1.5</span><span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_process_frame</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">frame</span><span class="p">:</span> <span class="n">NDTPFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">metrics</span><span class="o">.</span><span class="n">frames_total</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">metrics</span><span class="o">.</span><span class="n">last_frame_ts</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="n">feat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_features</span><span class="p">[</span><span class="n">frame</span><span class="o">.</span><span class="n">vehicle_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">feat</span>
+
+        <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+        <span class="n">pred</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_call_ml</span><span class="p">(</span><span class="n">feat</span><span class="p">)</span>
+        <span class="n">latency_ms</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span>
+        <span class="n">model_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">pred</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"model"</span><span class="p">,</span> <span class="s2">"delay_catboost_ds"</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">record_latency</span><span class="p">(</span><span class="n">latency_ms</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="n">model_id</span><span class="p">)</span>
+
+        <span class="n">pattern</span><span class="p">,</span> <span class="n">cause</span> <span class="o">=</span> <span class="n">infer_pattern</span><span class="p">(</span><span class="n">feat</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">pred</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern"</span><span class="p">)</span> <span class="ow">and</span> <span class="n">pred</span><span class="p">[</span><span class="s2">"pattern"</span><span class="p">]</span> <span class="o">!=</span> <span class="s2">"normal"</span><span class="p">:</span>
+            <span class="n">pattern</span> <span class="o">=</span> <span class="n">pred</span><span class="p">[</span><span class="s2">"pattern"</span><span class="p">]</span>
+            <span class="n">cause</span> <span class="o">=</span> <span class="n">CAUSE_MAP</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="n">pred</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cause"</span><span class="p">,</span> <span class="n">cause</span><span class="p">))</span>
+
+        <span class="n">prob</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">pred</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"delay_prob"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+        <span class="n">delay</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">pred</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"predicted_delay_sec"</span><span class="p">,</span> <span class="n">feat</span><span class="o">.</span><span class="n">current_delay_sec</span><span class="p">))</span>
+        <span class="n">abs_err</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">pred</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"abs_error_sec"</span><span class="p">,</span> <span class="nb">abs</span><span class="p">(</span><span class="n">delay</span> <span class="o">-</span> <span class="n">feat</span><span class="o">.</span><span class="n">current_delay_sec</span><span class="p">)))</span>
+        <span class="n">risk</span> <span class="o">=</span> <span class="n">risk_level</span><span class="p">(</span><span class="n">prob</span><span class="p">,</span> <span class="n">delay</span><span class="p">)</span>
+        <span class="n">horizon</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">pred</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"horizon_sec"</span><span class="p">,</span> <span class="n">settings</span><span class="o">.</span><span class="n">predict_horizon_sec</span><span class="p">))</span>
+        <span class="n">alert_lead</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">horizon</span><span class="p">)</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="n">vehicle_status</span><span class="p">(</span><span class="n">feat</span><span class="o">.</span><span class="n">speed_kmh</span><span class="p">,</span> <span class="n">feat</span><span class="o">.</span><span class="n">dwell_sec</span><span class="p">,</span> <span class="n">feat</span><span class="o">.</span><span class="n">doors_open</span><span class="p">)</span>
+        <span class="n">sug</span> <span class="o">=</span> <span class="n">suggested_speed_kmh</span><span class="p">(</span><span class="n">feat</span><span class="o">.</span><span class="n">dist_to_segment_m</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">horizon</span><span class="p">),</span> <span class="n">feat</span><span class="o">.</span><span class="n">current_delay_sec</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">upsert_vehicle</span><span class="p">(</span>
+            <span class="n">VehicleState</span><span class="p">(</span>
+                <span class="n">vehicle_id</span><span class="o">=</span><span class="n">feat</span><span class="o">.</span><span class="n">vehicle_id</span><span class="p">,</span>
+                <span class="n">route_id</span><span class="o">=</span><span class="n">feat</span><span class="o">.</span><span class="n">route_id</span><span class="p">,</span>
+                <span class="n">lat</span><span class="o">=</span><span class="n">feat</span><span class="o">.</span><span class="n">lat</span><span class="p">,</span>
+                <span class="n">lon</span><span class="o">=</span><span class="n">feat</span><span class="o">.</span><span class="n">lon</span><span class="p">,</span>
+                <span class="n">speed_kmh</span><span class="o">=</span><span class="n">feat</span><span class="o">.</span><span class="n">speed_kmh</span><span class="p">,</span>
+                <span class="n">current_delay_sec</span><span class="o">=</span><span class="n">feat</span><span class="o">.</span><span class="n">current_delay_sec</span><span class="p">,</span>
+                <span class="n">risk_level</span><span class="o">=</span><span class="n">risk</span><span class="p">,</span>
+                <span class="n">delay_prob</span><span class="o">=</span><span class="n">prob</span><span class="p">,</span>
+                <span class="n">segment_name</span><span class="o">=</span><span class="n">feat</span><span class="o">.</span><span class="n">matched_segment_name</span><span class="p">,</span>
+                <span class="n">ts</span><span class="o">=</span><span class="n">feat</span><span class="o">.</span><span class="n">ts</span><span class="p">,</span>
+                <span class="n">status</span><span class="o">=</span><span class="n">status</span><span class="p">,</span>
+                <span class="n">suggested_speed_kmh</span><span class="o">=</span><span class="n">sug</span><span class="p">,</span>
+                <span class="n">predicted_delay_sec</span><span class="o">=</span><span class="n">delay</span><span class="p">,</span>
+                <span class="n">track</span><span class="o">=</span><span class="n">feat</span><span class="o">.</span><span class="n">track</span><span class="p">,</span>
+                <span class="n">model</span><span class="o">=</span><span class="n">model_id</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">inc</span> <span class="o">=</span> <span class="n">Incident</span><span class="p">(</span>
+            <span class="n">vehicle_id</span><span class="o">=</span><span class="n">feat</span><span class="o">.</span><span class="n">vehicle_id</span><span class="p">,</span>
+            <span class="n">route_id</span><span class="o">=</span><span class="n">feat</span><span class="o">.</span><span class="n">route_id</span><span class="p">,</span>
+            <span class="n">delay_prob</span><span class="o">=</span><span class="n">prob</span><span class="p">,</span>
+            <span class="n">predicted_delay_sec</span><span class="o">=</span><span class="n">delay</span><span class="p">,</span>
+            <span class="n">abs_error_sec</span><span class="o">=</span><span class="n">abs_err</span><span class="p">,</span>
+            <span class="n">cause</span><span class="o">=</span><span class="n">cause</span><span class="p">,</span>
+            <span class="n">pattern</span><span class="o">=</span><span class="n">pattern</span><span class="p">,</span>
+            <span class="n">segment_id</span><span class="o">=</span><span class="n">feat</span><span class="o">.</span><span class="n">matched_segment_id</span><span class="p">,</span>
+            <span class="n">segment_name</span><span class="o">=</span><span class="n">feat</span><span class="o">.</span><span class="n">matched_segment_name</span><span class="p">,</span>
+            <span class="n">lat</span><span class="o">=</span><span class="n">feat</span><span class="o">.</span><span class="n">lat</span><span class="p">,</span>
+            <span class="n">lon</span><span class="o">=</span><span class="n">feat</span><span class="o">.</span><span class="n">lon</span><span class="p">,</span>
+            <span class="n">risk_level</span><span class="o">=</span><span class="n">risk</span><span class="p">,</span>
+            <span class="n">horizon_sec</span><span class="o">=</span><span class="n">horizon</span><span class="p">,</span>
+            <span class="n">recommendation</span><span class="o">=</span><span class="n">recommendation</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="n">risk</span><span class="p">,</span> <span class="n">sug</span><span class="p">),</span>
+            <span class="n">ts</span><span class="o">=</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">(),</span>
+            <span class="n">alert_lead_sec</span><span class="o">=</span><span class="n">alert_lead</span><span class="p">,</span>
+            <span class="n">suggested_speed_kmh</span><span class="o">=</span><span class="n">sug</span><span class="p">,</span>
+            <span class="n">status</span><span class="o">=</span><span class="n">status</span><span class="p">,</span>
+            <span class="n">model</span><span class="o">=</span><span class="n">model_id</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">upsert_incident</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stats</span><span class="o">.</span><span class="n">observe</span><span class="p">(</span><span class="n">feat</span><span class="o">.</span><span class="n">route_id</span><span class="p">,</span> <span class="n">delay</span><span class="p">,</span> <span class="n">risk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_update_route_risk</span><span class="p">(</span><span class="n">feat</span><span class="o">.</span><span class="n">route_id</span><span class="p">)</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">broadcast</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_update_route_risk</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">route_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">route</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">routes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">route_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">route</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">probs</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">v</span><span class="o">.</span><span class="n">delay_prob</span>
+            <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">vehicles</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">v</span><span class="o">.</span><span class="n">route_id</span> <span class="o">==</span> <span class="n">route_id</span>
+        <span class="p">]</span>
+        <span class="n">max_p</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">probs</span><span class="p">)</span> <span class="k">if</span> <span class="n">probs</span> <span class="k">else</span> <span class="mf">0.0</span>
+        <span class="n">route</span><span class="p">[</span><span class="s2">"max_prob"</span><span class="p">]</span> <span class="o">=</span> <span class="n">max_p</span>
+        <span class="n">route</span><span class="p">[</span><span class="s2">"risk_level"</span><span class="p">]</span> <span class="o">=</span> <span class="n">risk_level</span><span class="p">(</span><span class="n">max_p</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_call_ml</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">feat</span><span class="p">:</span> <span class="n">VehicleFeatures</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="n">ds</span> <span class="o">=</span> <span class="n">feat</span><span class="o">.</span><span class="n">ds_features</span><span class="p">(</span><span class="n">horizon_sec</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">predict_horizon_sec</span><span class="p">))</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"features"</span><span class="p">:</span> <span class="n">ds</span><span class="p">,</span>
+            <span class="s2">"seq_speeds"</span><span class="p">:</span> <span class="n">feat</span><span class="o">.</span><span class="n">seq_speeds</span><span class="p">,</span>
+            <span class="s2">"seq_delays"</span><span class="p">:</span> <span class="n">feat</span><span class="o">.</span><span class="n">seq_delays</span><span class="p">,</span>
+            <span class="s2">"horizon_sec"</span><span class="p">:</span> <span class="n">settings</span><span class="o">.</span><span class="n">predict_horizon_sec</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">async</span> <span class="k">with</span> <span class="n">httpx</span><span class="o">.</span><span class="n">AsyncClient</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">request_timeout_sec</span><span class="p">)</span> <span class="k">as</span> <span class="n">client</span><span class="p">:</span>
+                <span class="n">r</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">settings</span><span class="o">.</span><span class="n">ml_url</span><span class="si">}</span><span class="s2">/predict"</span><span class="p">,</span> <span class="n">json</span><span class="o">=</span><span class="n">payload</span><span class="p">)</span>
+                <span class="n">r</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
+                <span class="k">return</span> <span class="n">r</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"ML unavailable, heuristic fallback: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_heuristic</span><span class="p">(</span><span class="n">feat</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_heuristic</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">feat</span><span class="p">:</span> <span class="n">VehicleFeatures</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Деградация без ML: эвристика по признакам."""</span>
+        <span class="n">score</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">score</span> <span class="o">+=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">0.45</span><span class="p">,</span> <span class="n">feat</span><span class="o">.</span><span class="n">current_delay_sec</span> <span class="o">/</span> <span class="mi">400</span><span class="p">)</span>
+        <span class="n">score</span> <span class="o">+=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">feat</span><span class="o">.</span><span class="n">speed_drop_ratio</span> <span class="o">*</span> <span class="mf">0.4</span><span class="p">)</span>
+        <span class="n">score</span> <span class="o">+=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">feat</span><span class="o">.</span><span class="n">dwell_sec</span> <span class="o">/</span> <span class="mi">120</span><span class="p">)</span>
+        <span class="n">score</span> <span class="o">+=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">0.15</span><span class="p">,</span> <span class="n">feat</span><span class="o">.</span><span class="n">doors_open_ratio</span> <span class="o">*</span> <span class="mf">0.3</span><span class="p">)</span>
+        <span class="n">delay</span> <span class="o">=</span> <span class="n">feat</span><span class="o">.</span><span class="n">current_delay_sec</span> <span class="o">+</span> <span class="n">score</span> <span class="o">*</span> <span class="mi">200</span>
+        <span class="n">pattern</span><span class="p">,</span> <span class="n">cause</span> <span class="o">=</span> <span class="n">infer_pattern</span><span class="p">(</span><span class="n">feat</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"delay_prob"</span><span class="p">:</span> <span class="nb">min</span><span class="p">(</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">score</span><span class="p">),</span>
+            <span class="s2">"predicted_delay_sec"</span><span class="p">:</span> <span class="n">delay</span><span class="p">,</span>
+            <span class="s2">"abs_error_sec"</span><span class="p">:</span> <span class="mf">45.0</span><span class="p">,</span>
+            <span class="s2">"pattern"</span><span class="p">:</span> <span class="n">pattern</span><span class="p">,</span>
+            <span class="s2">"cause"</span><span class="p">:</span> <span class="n">cause</span><span class="p">,</span>
+            <span class="s2">"horizon_sec"</span><span class="p">:</span> <span class="n">settings</span><span class="o">.</span><span class="n">predict_horizon_sec</span><span class="p">,</span>
+            <span class="s2">"model"</span><span class="p">:</span> <span class="s2">"heuristic-fallback"</span><span class="p">,</span>
+        <span class="p">}</span>
+
+<div class="viewcode-block" id="Orchestrator.what_if">
+<a class="viewcode-back" href="../../../index.html#app.services.orchestrator.Orchestrator.what_if">[docs]</a>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">what_if</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">route_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">extra_vehicles</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""What-if: оценка влияния доп. ТС на график маршрута."""</span>
+        <span class="n">route_vehicles</span> <span class="o">=</span> <span class="p">[</span><span class="n">v</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">vehicles</span><span class="o">.</span><span class="n">values</span><span class="p">()</span> <span class="k">if</span> <span class="n">v</span><span class="o">.</span><span class="n">route_id</span> <span class="o">==</span> <span class="n">route_id</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">route_vehicles</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{</span>
+                <span class="s2">"route_id"</span><span class="p">:</span> <span class="n">route_id</span><span class="p">,</span>
+                <span class="s2">"extra_vehicles"</span><span class="p">:</span> <span class="n">extra_vehicles</span><span class="p">,</span>
+                <span class="s2">"message"</span><span class="p">:</span> <span class="s2">"Нет активных ТС на маршруте"</span><span class="p">,</span>
+                <span class="s2">"before_avg_delay_sec"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                <span class="s2">"after_avg_delay_sec"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                <span class="s2">"risk_reduction"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="n">before</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">current_delay_sec</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">route_vehicles</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">route_vehicles</span><span class="p">)</span>
+        <span class="c1"># простая модель: каждый доп. ТС снижает среднюю задержку и риск ~12–18%</span>
+        <span class="n">factor</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.35</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="mf">0.15</span> <span class="o">*</span> <span class="n">extra_vehicles</span><span class="p">)</span>
+        <span class="n">after</span> <span class="o">=</span> <span class="n">before</span> <span class="o">*</span> <span class="n">factor</span>
+        <span class="n">probs</span> <span class="o">=</span> <span class="p">[</span><span class="n">v</span><span class="o">.</span><span class="n">delay_prob</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">route_vehicles</span><span class="p">]</span>
+        <span class="n">before_p</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">probs</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">probs</span><span class="p">)</span>
+        <span class="n">after_p</span> <span class="o">=</span> <span class="n">before_p</span> <span class="o">*</span> <span class="n">factor</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"route_id"</span><span class="p">:</span> <span class="n">route_id</span><span class="p">,</span>
+            <span class="s2">"extra_vehicles"</span><span class="p">:</span> <span class="n">extra_vehicles</span><span class="p">,</span>
+            <span class="s2">"before_avg_delay_sec"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">before</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+            <span class="s2">"after_avg_delay_sec"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">after</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+            <span class="s2">"before_avg_risk"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">before_p</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="s2">"after_avg_risk"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">after_p</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="s2">"risk_reduction"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">before_p</span> <span class="o">-</span> <span class="n">after_p</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="s2">"recommendation"</span><span class="p">:</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Выпуск +</span><span class="si">{</span><span class="n">extra_vehicles</span><span class="si">}</span><span class="s2"> ТС на </span><span class="si">{</span><span class="n">route_id</span><span class="si">}</span><span class="s2">: "</span>
+                <span class="sa">f</span><span class="s2">"ожидаемое снижение ср. опоздания </span><span class="si">{</span><span class="n">before</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">after</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> с, "</span>
+                <span class="sa">f</span><span class="s2">"риска на </span><span class="si">{</span><span class="p">(</span><span class="n">before_p</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">after_p</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">100</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> п.п."</span>
+            <span class="p">),</span>
+        <span class="p">}</span></div>
+</div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">MosTrans Predict</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, MosTrans Hackathon.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
