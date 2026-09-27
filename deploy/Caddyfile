@@ -49,7 +49,15 @@
 		file_server
 	}
 
+	handle /login* {
+		reverse_proxy backend:8000
+	}
+
 	handle /driver* {
+		reverse_proxy backend:8000
+	}
+
+	handle /stats* {
 		reverse_proxy backend:8000
 	}
 

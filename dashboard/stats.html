@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Статистика маршрутов — МосТранс Предикт</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Manrope:wght@500;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+  <style>
+    .stats-wrap { padding: 20px; max-width: 1100px; margin: 0 auto; overflow: auto; height: calc(100vh - 56px); }
+    .period-tabs { display: flex; gap: 8px; margin: 16px 0; flex-wrap: wrap; }
+    .period-tabs button {
+      background: #102538; border: 1px solid var(--line); color: var(--text);
+      padding: 8px 14px; border-radius: 8px; font-weight: 700; cursor: pointer;
+    }
+    .period-tabs button.active { background: var(--red); border-color: transparent; }
+    .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+    .totals .kv strong { font-size: 22px; }
+    .stats-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .stats-table th, .stats-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; }
+    .stats-table th { color: var(--muted); font-size: 10px; text-transform: uppercase; }
+    .stats-table tr { cursor: pointer; }
+    .stats-table tr:hover { background: rgba(255,255,255,.04); }
+    .detail { margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-solid); }
+    @media (max-width: 700px) { .totals { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="app" style="grid-template-rows:56px 1fr">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <div>
+          <div class="brand-name">МосТранс <span>Предикт</span></div>
+          <div class="brand-sub">историческая статистика маршрутов</div>
+        </div>
+      </div>
+      <nav class="nav-links">
+        <a class="nav" href="/">Пульт</a>
+        <a class="nav active" href="/stats">Статистика</a>
+        <a class="nav" href="#" id="logout-link">Выйти</a>
+      </nav>
+    </header>
+    <div class="stats-wrap">
+      <h1 style="margin:0;font-size:24px;letter-spacing:-.03em">Сводка по маршрутам</h1>
+      <p style="color:var(--muted);margin:6px 0 0;font-size:14px">День / неделя / месяц и live-поток. Клик по строке — карточка маршрута.</p>
+      <div class="period-tabs" id="tabs">
+        <button type="button" data-p="live">Live</button>
+        <button type="button" data-p="day" class="active">День</button>
+        <button type="button" data-p="week">Неделя</button>
+        <button type="button" data-p="month">Месяц</button>
+      </div>
+      <div class="totals" id="totals"></div>
+      <table class="stats-table">
+        <thead>
+          <tr>
+            <th>Маршрут</th><th>A → B</th><th>Остановки</th><th>Рейсы</th>
+            <th>Ср. delay</th><th>Ontime</th><th>Алерты</th><th>Окно</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="detail" id="detail" hidden></div>
+    </div>
+  </div>
+  <script src="/static/auth.js"></script>
+  <script>
+    let period = "day";
+    const params = new URLSearchParams(location.search);
+    if (params.get("period")) period = params.get("period");
+
+    function fmt(s) {
+      const n = Math.round(Number(s) || 0);
+      if (Math.abs(n) < 60) return n + " с";
+      return Math.floor(Math.abs(n) / 60) + " мин";
+    }
+
+    async function load() {
+      document.querySelectorAll("#tabs button").forEach((b) => {
+        b.classList.toggle("active", b.dataset.p === period);
+      });
+      const r = await Auth.fetch("/api/v1/stats/overview?period=" + encodeURIComponent(period));
+      if (!r.ok) return;
+      const d = await r.json();
+      document.getElementById("totals").innerHTML = `
+        <div class="kv"><label>Маршрутов</label><strong>${d.totals.routes}</strong></div>
+        <div class="kv"><label>Ср. delay</label><strong>${fmt(d.totals.avg_delay_sec)}</strong></div>
+        <div class="kv"><label>Алерты</label><strong>${d.totals.alerts}</strong></div>`;
+      document.getElementById("tbody").innerHTML = d.routes.map((x) => `
+        <tr data-id="${x.route_id}">
+          <td><b>${x.name}</b></td>
+          <td>${x.point_a || "—"} → ${x.point_b || "—"}</td>
+          <td>${x.stops_count}</td>
+          <td>${x.trips ?? x.samples ?? "—"}</td>
+          <td>${fmt(x.avg_delay_sec)}</td>
+          <td>${x.ontime_pct ?? "—"}%</td>
+          <td>${x.alerts ?? 0}</td>
+          <td>${x.first_trip}–${x.last_trip}</td>
+        </tr>`).join("");
+      document.querySelectorAll("#tbody tr").forEach((tr) => {
+        tr.addEventListener("click", () => showDetail(tr.dataset.id));
+      });
+      const focus = params.get("route");
+      if (focus) showDetail(focus);
+    }
+
+    async function showDetail(id) {
+      const r = await Auth.fetch("/api/v1/routes/" + encodeURIComponent(id) + "/detail");
+      if (!r.ok) return;
+      const d = await r.json();
+      const box = document.getElementById("detail");
+      box.hidden = false;
+      const stops = (d.stops || []).map((s) => s.name).join(" → ");
+      box.innerHTML = `
+        <h2 style="margin:0 0 8px">${d.name}</h2>
+        <p style="color:var(--muted);margin:0 0 12px">A: ${(d.point_a||{}).name} · B: ${(d.point_b||{}).name} · ${d.first_trip}–${d.last_trip}</p>
+        <div class="grid2">
+          <div class="kv"><label>Live delay</label><strong>${fmt(d.live.avg_delay_sec)}</strong></div>
+          <div class="kv"><label>Live ontime</label><strong>${d.live.ontime_pct}%</strong></div>
+          <div class="kv"><label>День delay</label><strong>${fmt(d.history.day?.avg_delay_sec)}</strong></div>
+          <div class="kv"><label>Неделя delay</label><strong>${fmt(d.history.week?.avg_delay_sec)}</strong></div>
+          <div class="kv"><label>Месяц delay</label><strong>${fmt(d.history.month?.avg_delay_sec)}</strong></div>
+          <div class="kv"><label>ТС сейчас</label><strong>${d.active_count}</strong></div>
+        </div>
+        <p style="margin:12px 0 0;font-size:13px;color:var(--muted)">${stops}</p>`;
+      box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    document.getElementById("tabs").addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      period = b.dataset.p;
+      history.replaceState(null, "", "/stats?period=" + period);
+      load();
+    });
+    document.getElementById("logout-link").onclick = (e) => { e.preventDefault(); Auth.logout(); };
+
+    (async () => {
+      const user = await Auth.require("dispatcher");
+      if (!user) return;
+      load();
+      setInterval(load, 10000);
+    })();
+  </script>
+</body>
+</html>

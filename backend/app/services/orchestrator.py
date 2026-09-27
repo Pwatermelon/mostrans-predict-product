@@ -14,6 +14,7 @@ from app.config import settings
 from app.features.ds_schema import suggested_speed_kmh, vehicle_status
 from app.features.engine import FeatureEngine, RouteSegment, VehicleFeatures
 from app.ndtp.parser import NDTPFrame, parse_json_line
+from app.services.route_stats import RouteStatsStore, load_routes_catalog
 from app.services.state import AppState, Incident, VehicleState
 
 logger = logging.getLogger("mostrans.orchestrator")
@@ -78,6 +79,8 @@ class Orchestrator:
         self.engine = FeatureEngine(self.segments)
         self._last_features: dict[str, VehicleFeatures] = {}
         self._frame_queue: asyncio.Queue[NDTPFrame] = asyncio.Queue(maxsize=5000)
+        self.catalog = load_routes_catalog(settings.data_dir)
+        self.stats = RouteStatsStore(self.catalog)
 
         for seg in self.segments:
             r = self.state.routes.setdefault(
@@ -295,6 +298,7 @@ class Orchestrator:
             model=model_id,
         )
         self.state.upsert_incident(inc)
+        self.stats.observe(feat.route_id, delay, risk)
         self._update_route_risk(feat.route_id)
         await self.state.broadcast()
 

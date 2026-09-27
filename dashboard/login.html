@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Вход — МосТранс Предикт</title>
+  <meta name="theme-color" content="#0B1F33" />
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&family=Manrope:wght@500;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #071421; --text: #e8eef5; --muted: #8fa3b8;
+      --red: #e31e24; --cyan: #3db8c5;
+      --font: Manrope, system-ui, sans-serif; --mono: "JetBrains Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100dvh; font-family: var(--font); color: var(--text);
+      background:
+        radial-gradient(900px 420px at 10% -10%, rgba(227,30,36,.22), transparent 55%),
+        radial-gradient(700px 380px at 90% 0%, rgba(61,184,197,.16), transparent 50%),
+        linear-gradient(165deg, #051018, var(--bg) 55%, #0a1a2c);
+      display: flex; align-items: center; justify-content: center; padding: 24px;
+    }
+    .card {
+      width: min(420px, 100%);
+      background: rgba(14,36,56,.92);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 16px;
+      padding: 28px 24px 22px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.35);
+    }
+    .brand { font-size: 22px; font-weight: 800; letter-spacing: -0.03em; margin: 0 0 4px; }
+    .brand span { color: var(--red); }
+    .sub { color: var(--muted); font-size: 13px; margin: 0 0 22px; line-height: 1.45; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 6px; text-transform: uppercase; letter-spacing: .05em; }
+    input {
+      width: 100%; font: 600 15px var(--font); padding: 12px 14px; margin-bottom: 14px;
+      border-radius: 10px; border: 1px solid rgba(255,255,255,.12);
+      background: #102538; color: var(--text);
+    }
+    input:focus { outline: 1px solid var(--cyan); border-color: transparent; }
+    button {
+      width: 100%; margin-top: 4px; padding: 13px;
+      font: 700 15px var(--font); border: 0; border-radius: 10px; cursor: pointer;
+      background: linear-gradient(180deg,#e53a3f,var(--red)); color: #fff;
+    }
+    button:disabled { opacity: .6; cursor: wait; }
+    .err { color: #ff8a8a; font-size: 13px; min-height: 18px; margin: 10px 0 0; }
+    .hint {
+      margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.08);
+      font-size: 12px; color: var(--muted); line-height: 1.5;
+    }
+    .hint code {
+      font-family: var(--mono); font-size: 11px; color: var(--cyan);
+      background: rgba(61,184,197,.1); padding: 1px 5px; border-radius: 4px;
+    }
+    .roles { display: flex; gap: 8px; margin-bottom: 16px; }
+    .roles button {
+      flex: 1; background: #102538; color: var(--text);
+      border: 1px solid rgba(255,255,255,.12); font-weight: 600; font-size: 13px; padding: 10px;
+    }
+    .roles button.on { border-color: var(--cyan); color: var(--cyan); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1 class="brand">МосТранс <span>Предикт</span></h1>
+    <p class="sub">Вход для диспетчера и водителя. Демо-пароль у всех: <code>demo</code>.</p>
+
+    <div class="roles">
+      <button type="button" class="on" id="role-d" data-login="dispatcher">Диспетчер</button>
+      <button type="button" id="role-v" data-login="driver-1000">Водитель</button>
+    </div>
+
+    <form id="form">
+      <label for="login">Логин</label>
+      <input id="login" name="login" autocomplete="username" value="dispatcher" required />
+      <label for="password">Пароль</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" value="demo" required />
+      <button type="submit" id="go">Войти</button>
+      <p class="err" id="err"></p>
+    </form>
+
+    <div class="hint">
+      Диспетчер: <code>dispatcher</code> / <code>demo</code> → пульт и статистика.<br />
+      Водитель: <code>driver-1000</code> … <code>driver-1011</code> / <code>demo</code> → кабинет своего ТС.
+    </div>
+  </div>
+  <script src="/static/auth.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const next = params.get("next") || "";
+
+    document.querySelectorAll(".roles button").forEach((b) => {
+      b.onclick = () => {
+        document.querySelectorAll(".roles button").forEach((x) => x.classList.remove("on"));
+        b.classList.add("on");
+        document.getElementById("login").value = b.dataset.login;
+      };
+    });
+
+    document.getElementById("form").onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("go");
+      const err = document.getElementById("err");
+      err.textContent = "";
+      btn.disabled = true;
+      try {
+        const r = await fetch("/api/v1/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            login: document.getElementById("login").value.trim(),
+            password: document.getElementById("password").value,
+          }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          err.textContent = data.detail || "Ошибка входа";
+          return;
+        }
+        Auth.setSession(data.token, data.user);
+        if (next && next.startsWith("/")) {
+          location.href = next;
+          return;
+        }
+        location.href = data.user.role === "driver" ? "/driver" : "/";
+      } catch {
+        err.textContent = "Сеть недоступна";
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    // уже залогинен — сразу дальше
+    (async () => {
+      if (!Auth.token()) return;
+      const r = await fetch("/api/v1/auth/me", { headers: Auth.headers(), credentials: "same-origin" });
+      if (!r.ok) return;
+      const { user } = await r.json();
+      if (next && next.startsWith("/")) location.href = next;
+      else location.href = user.role === "driver" ? "/driver" : "/";
+    })();
+  </script>
+</body>
+</html>

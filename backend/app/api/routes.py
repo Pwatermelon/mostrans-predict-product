@@ -5,9 +5,18 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from fastapi import APIRouter, Body, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
+from app.auth import (
+    User,
+    authenticate,
+    demo_accounts,
+    ensure_driver_access,
+    issue_token,
+    require_dispatcher,
+    require_user,
+)
 from app.ndtp.parser import frame_from_dict
 
 router = APIRouter()
@@ -34,6 +43,11 @@ class WhatIfIn(BaseModel):
     extra_vehicles: int = Field(1, ge=1, le=5)
 
 
+class LoginIn(BaseModel):
+    login: str = Field(..., examples=["dispatcher"])
+    password: str = Field(..., examples=["demo"])
+
+
 @router.get("/health", tags=["meta"])
 async def health(request: Request) -> dict[str, Any]:
     """Статус backend + режим деградации."""
@@ -47,37 +61,88 @@ async def health(request: Request) -> dict[str, Any]:
     }
 
 
+@router.get("/auth/demo-accounts", tags=["auth"])
+async def auth_demo_accounts() -> dict[str, Any]:
+    """Демо-логины для жюри (пароль у всех: demo)."""
+    return {"accounts": demo_accounts(), "password": "demo"}
+
+
+@router.post("/auth/login", tags=["auth"])
+async def auth_login(body: LoginIn, response: Response) -> dict[str, Any]:
+    """Вход: диспетчер или водитель ТС."""
+    user = authenticate(body.login, body.password)
+    if not user:
+        raise HTTPException(401, "Неверный логин или пароль")
+    token = issue_token(user)
+    response.set_cookie(
+        key="mt_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=60 * 60 * 12,
+        path="/",
+    )
+    return {"ok": True, "token": token, "user": user.to_dict()}
+
+
+@router.post("/auth/logout", tags=["auth"])
+async def auth_logout(response: Response) -> dict[str, Any]:
+    response.delete_cookie("mt_token", path="/")
+    return {"ok": True}
+
+
+@router.get("/auth/me", tags=["auth"])
+async def auth_me(user: User = Depends(require_user)) -> dict[str, Any]:
+    return {"user": user.to_dict()}
+
+
 @router.get("/snapshot", tags=["dashboard"])
-async def snapshot(request: Request) -> dict[str, Any]:
+async def snapshot(
+    request: Request,
+    _user: User = Depends(require_dispatcher),
+) -> dict[str, Any]:
     """Полный снимок для дашборда (polling fallback)."""
     return request.app.state.state.snapshot()
 
 
 @router.get("/vehicles", tags=["dashboard"])
-async def vehicles(request: Request) -> list[dict[str, Any]]:
-    return [v.to_dict() for v in request.app.state.state.vehicles.values()]
+async def vehicles(
+    request: Request,
+    user: User = Depends(require_user),
+) -> list[dict[str, Any]]:
+    """Список ТС: диспетчер — все; водитель — только своё."""
+    vs = list(request.app.state.state.vehicles.values())
+    if user.role == "driver":
+        vs = [v for v in vs if v.vehicle_id == user.vehicle_id]
+    return [v.to_dict() for v in vs]
 
 
 @router.get("/incidents", tags=["dashboard"])
-async def incidents(request: Request) -> list[dict[str, Any]]:
+async def incidents(
+    request: Request,
+    _user: User = Depends(require_dispatcher),
+) -> list[dict[str, Any]]:
     items = [i.to_dict() for i in request.app.state.state.incidents.values()]
     return sorted(items, key=lambda x: -x["delay_prob"])
 
 
 @router.get("/routes", tags=["dashboard"])
-async def routes(request: Request) -> list[dict[str, Any]]:
+async def routes(
+    request: Request,
+    _user: User = Depends(require_dispatcher),
+) -> list[dict[str, Any]]:
     return list(request.app.state.state.routes.values())
 
 
 @router.get("/metrics", tags=["meta"])
 async def metrics(request: Request) -> dict[str, Any]:
-    """Latency и пропускная способность."""
+    """Latency и пропускная способность (публично для health)."""
     return request.app.state.state.metrics.to_dict()
 
 
 @router.post("/telemetry", tags=["ingest"])
 async def post_telemetry(request: Request, body: TelemetryIn) -> dict[str, Any]:
-    """Приём одного кадра NDTP (JSON)."""
+    """Приём одного кадра NDTP (JSON). Без auth — поток жюри/эмулятор."""
     data = body.model_dump()
     if data.get("ts") is None:
         data["ts"] = time.time()
@@ -102,13 +167,21 @@ async def post_telemetry_batch(
 
 
 @router.post("/what-if", tags=["analytics"])
-async def what_if(request: Request, body: WhatIfIn) -> dict[str, Any]:
+async def what_if(
+    request: Request,
+    body: WhatIfIn,
+    _user: User = Depends(require_dispatcher),
+) -> dict[str, Any]:
     """What-if: влияние выпуска дополнительного ТС."""
     return await request.app.state.orchestrator.what_if(body.route_id, body.extra_vehicles)
 
 
 @router.get("/incidents/{vehicle_id}", tags=["dashboard"])
-async def incident_card(request: Request, vehicle_id: str) -> dict[str, Any]:
+async def incident_card(
+    request: Request,
+    vehicle_id: str,
+    _user: User = Depends(require_dispatcher),
+) -> dict[str, Any]:
     inc = request.app.state.state.incidents.get(vehicle_id)
     if not inc:
         raise HTTPException(404, "Инцидент не найден")
@@ -121,29 +194,40 @@ class MessageIn(BaseModel):
 
 
 @router.post("/messages", tags=["dispatcher"])
-async def send_message(request: Request, body: MessageIn) -> dict[str, Any]:
+async def send_message(
+    request: Request,
+    body: MessageIn,
+    _user: User = Depends(require_dispatcher),
+) -> dict[str, Any]:
     """Диспетчер → водитель: сообщение о задержке / рекомендации."""
     state = request.app.state.state
-    if body.vehicle_id not in state.vehicles and body.vehicle_id not in state.incidents:
-        # всё равно принимаем — ТС может появиться
-        pass
     msg = state.add_message(body.vehicle_id, body.text.strip())
     await state.broadcast()
     return {"ok": True, "message": msg.to_dict()}
 
 
 @router.get("/messages/{vehicle_id}", tags=["dispatcher"])
-async def list_messages(request: Request, vehicle_id: str) -> list[dict[str, Any]]:
+async def list_messages(
+    request: Request,
+    vehicle_id: str,
+    user: User = Depends(require_user),
+) -> list[dict[str, Any]]:
+    ensure_driver_access(user, vehicle_id)
     return [m.to_dict() for m in request.app.state.state.messages.get(vehicle_id, [])]
 
 
 @router.get("/driver/{vehicle_id}", tags=["driver"])
-async def driver_view(request: Request, vehicle_id: str) -> dict[str, Any]:
+async def driver_view(
+    request: Request,
+    vehicle_id: str,
+    user: User = Depends(require_user),
+) -> dict[str, Any]:
     """Упрощённый вид для водителя: задержка, скорость, inbox."""
+    ensure_driver_access(user, vehicle_id)
     state = request.app.state.state
     v = state.vehicles.get(vehicle_id)
     if not v:
-        raise HTTPException(404, "ТС не найдено")
+        raise HTTPException(404, "ТС не найдено (ещё нет в потоке)")
     return {
         "vehicle_id": vehicle_id,
         "route_id": v.route_id,
@@ -157,3 +241,33 @@ async def driver_view(request: Request, vehicle_id: str) -> dict[str, Any]:
         "messages": [m.to_dict() for m in state.messages.get(vehicle_id, [])[-20:]],
         "model": v.model,
     }
+
+
+@router.get("/routes/{route_id}/detail", tags=["analytics"])
+async def route_detail(
+    request: Request,
+    route_id: str,
+    _user: User = Depends(require_dispatcher),
+) -> dict[str, Any]:
+    """Карточка маршрута: A/B, остановки, окна рейсов, live + история."""
+    detail = request.app.state.orchestrator.stats.route_detail(route_id)
+    if not detail:
+        raise HTTPException(404, "Маршрут не найден")
+    vehicles = [
+        v.to_dict()
+        for v in request.app.state.state.vehicles.values()
+        if v.route_id == route_id
+    ]
+    detail["active_vehicles"] = vehicles
+    detail["active_count"] = len(vehicles)
+    return detail
+
+
+@router.get("/stats/overview", tags=["analytics"])
+async def stats_overview(
+    request: Request,
+    period: str = "day",
+    _user: User = Depends(require_dispatcher),
+) -> dict[str, Any]:
+    """Сводка по всем маршрутам: day | week | month | live."""
+    return request.app.state.orchestrator.stats.overview(period)

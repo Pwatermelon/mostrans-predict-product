@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router
+from app.auth import parse_token
 from app.config import settings
 from app.services.orchestrator import Orchestrator
 from app.services.state import AppState
@@ -94,6 +95,16 @@ async def root():
     }
 
 
+@app.get("/login", tags=["meta"])
+@app.get("/login/", tags=["meta"])
+async def login_page():
+    """Страница входа диспетчер / водитель."""
+    path = DASHBOARD_DIR / "login.html"
+    if path.exists():
+        return FileResponse(path)
+    return {"error": "login.html not found"}
+
+
 @app.get("/driver", tags=["meta"])
 @app.get("/driver/", tags=["meta"])
 async def driver_page():
@@ -104,6 +115,16 @@ async def driver_page():
     return {"error": "driver.html not found"}
 
 
+@app.get("/stats", tags=["meta"])
+@app.get("/stats/", tags=["meta"])
+async def stats_page():
+    """Дашборд исторической статистики маршрутов."""
+    path = DASHBOARD_DIR / "stats.html"
+    if path.exists():
+        return FileResponse(path)
+    return {"error": "stats.html not found"}
+
+
 @app.get("/healthz", tags=["meta"])
 async def healthz():
     """Healthcheck для Docker/Caddy."""
@@ -112,13 +133,17 @@ async def healthz():
 
 @app.websocket("/ws/live")
 async def ws_live(websocket: WebSocket):
-    """Поток состояния дашборда в реальном времени."""
+    """Поток состояния дашборда — только диспетчер."""
+    token = websocket.query_params.get("token") or websocket.cookies.get("mt_token")
+    user = parse_token(token) if token else None
+    if not user or user.role != "dispatcher":
+        await websocket.close(code=4401)
+        return
     await websocket.accept()
     state.ws_clients.add(websocket)
     try:
         await websocket.send_json(state.snapshot())
         while True:
-            # keepalive / client pings
             try:
                 await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
             except asyncio.TimeoutError:

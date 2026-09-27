@@ -25,3 +25,4 @@ artifacts/submit_validate.csv
 artifacts/submission_validate.csv
 artifacts/blend_w.txt
 !artifacts/public/
+_local/

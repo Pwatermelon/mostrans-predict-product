@@ -22,12 +22,17 @@
           <div class="brand-sub">горизонт 10–15 мин · <span id="model-id">delay_catboost_ds</span></div>
         </div>
       </div>
+      <nav class="nav-links">
+        <a class="nav active" href="/">Пульт</a>
+        <a class="nav" href="/stats">Статистика</a>
+        <a class="nav" href="/login">Смена роли</a>
+      </nav>
       <div class="status-cluster">
         <div class="pill" id="mode-pill"><i class="dot"></i><span>подключение…</span></div>
         <div class="stat"><label>Latency</label><strong id="lat-ms">—</strong></div>
-        <div class="stat"><label>Кадры</label><strong id="frames-n">0</strong></div>
         <div class="stat"><label>Алерты</label><strong id="alerts-n">0</strong></div>
-        <a class="link-driver" href="/driver">Водитель →</a>
+        <div class="stat"><label>Кто</label><strong id="user-name" style="font-size:12px">—</strong></div>
+        <button type="button" class="nav" id="logout-btn" style="cursor:pointer;background:transparent;border:0;color:inherit;font:inherit">Выйти</button>
         <div class="clock" id="clock">--:--:--</div>
       </div>
     </header>
@@ -40,18 +45,33 @@
           <span><i class="lg yellow"></i>риск</span>
           <span><i class="lg red"></i>критично</span>
         </div>
-        <div class="fleet-table-wrap">
-          <table class="fleet-table" id="fleet-table">
-            <thead>
-              <tr><th>ТС</th><th>Маршрут</th><th>Статус</th><th>Delay</th><th>Риск</th></tr>
-            </thead>
-            <tbody id="fleet-body"></tbody>
-          </table>
+        <div class="fleet-bar">
+          <div class="fleet-filters">
+            <label>Маршрут
+              <select id="filter-route"><option value="">Все</option></select>
+            </label>
+            <label>Риск
+              <select id="filter-risk">
+                <option value="">Все</option>
+                <option value="red">Критично</option>
+                <option value="yellow">Риск</option>
+                <option value="green">Норма</option>
+              </select>
+            </label>
+          </div>
+          <div class="fleet-table-wrap">
+            <table class="fleet-table">
+              <thead>
+                <tr><th>ТС</th><th>Маршрут</th><th>Статус</th><th>Delay</th><th>Риск</th></tr>
+              </thead>
+              <tbody id="fleet-body"></tbody>
+            </table>
+          </div>
         </div>
       </section>
 
       <aside class="side">
-        <div class="panel">
+        <div class="panel shrink">
           <div class="panel-head">
             <h2>Инциденты</h2>
             <span class="badge" id="inc-badge">0</span>
@@ -59,9 +79,18 @@
           <div class="incidents" id="incidents"></div>
         </div>
 
-        <div class="panel whatif">
+        <div class="panel">
+          <div class="panel-head"><h2>Сообщение водителю</h2></div>
+          <div class="msg-compose">
+            <select id="msg-vehicle"></select>
+            <textarea id="msg-text" rows="3" placeholder="Вы опаздываете. Рекомендуем скорость …"></textarea>
+            <button type="button" id="msg-send-main">Отправить</button>
+            <div class="msg-hint" id="msg-hint">Выберите ТС или кликните по инциденту</div>
+          </div>
+        </div>
+
+        <div class="panel">
           <div class="panel-head"><h2>What-if</h2></div>
-          <p class="muted">Оценка выпуска дополнительного ТС</p>
           <div class="whatif-row">
             <select id="wf-route"></select>
             <select id="wf-extra">
@@ -69,12 +98,12 @@
               <option value="2">+2 ТС</option>
               <option value="3">+3 ТС</option>
             </select>
-            <button type="button" id="wf-run">Рассчитать</button>
+            <button type="button" id="wf-run">OK</button>
           </div>
-          <div class="whatif-out" id="wf-out">Выберите маршрут</div>
+          <div class="whatif-out" id="wf-out">—</div>
         </div>
 
-        <div class="panel routes-panel">
+        <div class="panel grow">
           <div class="panel-head"><h2>Маршруты</h2></div>
           <div class="routes" id="routes"></div>
         </div>
@@ -87,6 +116,7 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/static/auth.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

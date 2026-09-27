@@ -24,6 +24,7 @@
 | Map matching | `backend/app/features/engine.py` |
 | What-if | `POST /api/v1/what-if` |
 | Сообщения Д→В | `POST /api/v1/messages`, `/driver` |
+| Авторизация | `/login` · `dispatcher`/`demo`, `driver-1000`…`/demo` |
 | Статусы / трек / таблица | дашборд |
 | ONNX LSTM (aux) | `ml/artifacts` |
 | Деплой GHCR | `.github/workflows/deploy.yml` |

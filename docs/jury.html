@@ -36,22 +36,32 @@
   </div>
 
   <div class="step">
-    <h2>2. Куда смотреть</h2>
+    <h2>2. Авторизация (демо)</h2>
+    <p>Вход: <a href="/login">/login</a>. Пароль у всех: <code>demo</code>.</p>
     <ul>
-      <li><a href="/">Дашборд диспетчера</a> — карта, треки, таблица ТС, алерты, what-if, сообщения водителю</li>
-      <li><a href="/driver">Кабинет водителя</a> — мобильный вид: задержка, скорость, inbox</li>
+      <li>Диспетчер: <code>dispatcher</code> → пульт, статистика, сообщения водителям</li>
+      <li>Водитель: <code>driver-1000</code> … <code>driver-1011</code> → кабинет только своего ТС</li>
+    </ul>
+  </div>
+
+  <div class="step">
+    <h2>3. Куда смотреть</h2>
+    <ul>
+      <li><a href="/login">Вход</a> → <a href="/">дашборд диспетчера</a> — карта, треки, таблица ТС, алерты, what-if, сообщения</li>
+      <li><a href="/stats">Статистика маршрутов</a> — день / неделя / месяц</li>
+      <li><a href="/driver">Кабинет водителя</a> — после входа как <code>driver-1000</code></li>
       <li><a href="/docs">Swagger</a> · <a href="/artifacts/submission.csv">submission.csv</a></li>
       <li>Эмулятор NDTP: TCP <code>:9000</code></li>
     </ul>
   </div>
 
   <div class="step">
-    <h2>3. Поток телематики</h2>
-    <p>Эмулятор шлёт 12 ТС. Либо <code>POST /api/v1/telemetry</code> / <code>/telemetry/batch</code>.</p>
+    <h2>4. Поток телематики</h2>
+    <p>Эмулятор шлёт 12 ТС. Либо <code>POST /api/v1/telemetry</code> / <code>/telemetry/batch</code> (без auth).</p>
   </div>
 
   <div class="step">
-    <h2>4. Прогнозы и действия диспетчера</h2>
+    <h2>5. Прогнозы и действия диспетчера</h2>
     <ul>
       <li>Инциденты + цвет green/yellow/red, статус в пути / остановка / обед</li>
       <li>Карточка: горизонт 10–15 мин, причина, реком. скорость, сообщение водителю</li>
@@ -60,7 +70,7 @@
   </div>
 
   <div class="step">
-    <h2>5. Надёжность</h2>
+    <h2>6. Надёжность</h2>
     <p><code>docker compose stop emulator</code> — режим degraded/historical без падения сервиса.</p>
   </div>
 </body>

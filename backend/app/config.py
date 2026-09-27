@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     artifacts_dir: str = "/app/artifacts"
     degrade_after_sec: float = 8.0
     request_timeout_sec: float = 2.0
+    auth_secret: str = "mostrans-predict-demo-secret"
+    auth_token_ttl_sec: int = 60 * 60 * 12  # 12 ч
 
 
 settings = Settings()
