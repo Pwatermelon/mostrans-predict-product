@@ -24,6 +24,7 @@
       --safe-t: env(safe-area-inset-top, 0px);
       --safe-b: env(safe-area-inset-bottom, 0px);
       --risk: var(--green);
+      --theme: var(--green);
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body { margin: 0; padding: 0; }
@@ -32,11 +33,7 @@
       font-family: var(--font);
       color: var(--text);
       background: var(--bg);
-      padding:
-        calc(12px + var(--safe-t))
-        12px
-        calc(88px + var(--safe-b))
-        12px;
+      padding: calc(12px + var(--safe-t)) 12px calc(16px + var(--safe-b));
       max-width: 480px;
       margin: 0 auto;
     }
@@ -48,7 +45,10 @@
       display: flex; justify-content: space-between; align-items: center;
       gap: 10px; margin-bottom: 10px;
     }
-    .who { font-size: 13px; font-weight: 600; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .who {
+      font-size: 13px; font-weight: 600; color: var(--muted);
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
     button.link, a.back {
       background: none; border: 0; color: var(--muted); font: 600 13px var(--font);
       cursor: pointer; text-decoration: underline; padding: 8px 0; flex-shrink: 0;
@@ -88,9 +88,7 @@
       display: flex; justify-content: space-between;
       font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 600;
     }
-    .bar {
-      height: 10px; border-radius: 999px; background: #e3e7ee; overflow: hidden;
-    }
+    .bar { height: 10px; border-radius: 999px; background: #e3e7ee; overflow: hidden; }
     .bar > i {
       display: block; height: 100%; width: 0%;
       background: var(--risk); border-radius: inherit;
@@ -104,13 +102,12 @@
       padding: 12px 14px;
       margin-bottom: 10px;
     }
+    .card.chat { border-color: color-mix(in srgb, var(--theme) 28%, var(--line)); }
     .label {
       font-size: 11px; color: var(--muted); text-transform: uppercase;
       letter-spacing: .05em; margin-bottom: 6px; font-weight: 700;
     }
-    .tip {
-      font-size: 15px; line-height: 1.4; font-weight: 600;
-    }
+    .tip { font-size: 15px; line-height: 1.4; font-weight: 600; }
     .cause { font-size: 13px; color: var(--muted); margin-top: 6px; line-height: 1.35; }
 
     .grid {
@@ -134,7 +131,11 @@
       border: 1px solid var(--line);
       border-radius: 999px; padding: 6px 10px;
     }
-    .chip.on { background: color-mix(in srgb, var(--risk) 12%, #fff); border-color: color-mix(in srgb, var(--risk) 35%, var(--line)); color: var(--risk); }
+    .chip.on {
+      background: color-mix(in srgb, var(--risk) 12%, #fff);
+      border-color: color-mix(in srgb, var(--risk) 35%, var(--line));
+      color: var(--risk);
+    }
 
     .speed-cmp { margin-top: 8px; }
     .speed-row {
@@ -150,25 +151,22 @@
     .delta.down { background: #e8f6ef; color: var(--green); }
     .delta.alert { background: #fdecee; color: var(--red); }
 
-    .checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-    .checks li {
-      display: flex; gap: 10px; align-items: flex-start;
-      font-size: 14px; line-height: 1.35; font-weight: 500;
-      padding: 10px 10px; border-radius: 8px; background: #f6f7fa; border: 1px solid var(--line);
+    .inbox {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 120px;
+      max-height: min(46vh, 360px);
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 2px;
+      margin-bottom: 10px;
     }
-    .checks li::before {
-      content: ""; width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px;
-      border-radius: 50%; border: 2px solid var(--risk);
-      background:
-        radial-gradient(circle at center, var(--risk) 0 40%, transparent 42%);
-    }
-    .checks li.done { opacity: .55; text-decoration: line-through; }
-
-    .inbox { display: flex; flex-direction: column; gap: 8px; max-height: 42vh; overflow: auto; -webkit-overflow-scrolling: touch; }
     .msg {
       padding: 10px 12px; border-radius: 8px;
       background: #f0f4fa; border: 1px solid var(--line);
       font-size: 14px; line-height: 1.4;
+      word-break: break-word;
     }
     .msg.mine { background: #eef8f2; border-color: #c7e4d4; }
     .msg.new { outline: 2px solid color-mix(in srgb, var(--red) 45%, transparent); }
@@ -176,29 +174,15 @@
       display: flex; justify-content: space-between; gap: 8px;
       font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 4px;
     }
-    .empty { color: var(--muted); font-size: 13px; }
+    .empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
 
-    .dock {
-      position: fixed;
-      left: 50%; transform: translateX(-50%);
-      bottom: 0; width: min(480px, 100%);
-      padding: 10px 12px calc(10px + var(--safe-b));
-      background: color-mix(in srgb, var(--surface) 92%, transparent);
-      backdrop-filter: blur(10px);
-      border-top: 1px solid var(--line);
-      z-index: 20;
-    }
-    .dock-label {
-      font-size: 11px; color: var(--muted); font-weight: 700;
-      text-transform: uppercase; letter-spacing: .04em; margin: 0 0 6px;
-    }
     .quick {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 8px;
     }
     .quick button {
-      min-height: 48px;
+      min-height: 44px;
       border: 1px solid var(--line);
       border-radius: 10px;
       background: #fff;
@@ -209,7 +193,7 @@
     }
     .quick button:active { transform: scale(.98); }
     .quick button.primary {
-      background: var(--theme, var(--red));
+      background: var(--theme);
       border-color: transparent;
       color: #fff;
       grid-column: 1 / -1;
@@ -234,10 +218,6 @@
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .toast.show { transform: translateX(-50%) translateY(0); }
-
-    @media (min-width: 520px) {
-      body { padding-bottom: calc(96px + var(--safe-b)); }
-    }
   </style>
 </head>
 <body class="risk-green">
@@ -265,6 +245,19 @@
           <span id="prob-txt">—</span>
         </div>
         <div class="bar"><i id="prob-bar"></i></div>
+      </div>
+    </div>
+
+    <div class="card chat">
+      <div class="label">Сообщения диспетчера <span id="msg-count"></span></div>
+      <div class="inbox" id="inbox"><div class="empty">Пока пусто</div></div>
+      <div class="label">Ответить</div>
+      <div class="quick">
+        <button type="button" class="primary" data-reply="Принял, выполняю">Принял</button>
+        <button type="button" data-reply="В пробке / затор">В пробке</button>
+        <button type="button" data-reply="На остановке, долгая посадка">На остановке</button>
+        <button type="button" data-reply="Нужна помощь / резерв">Нужна помощь</button>
+        <button type="button" data-reply="График восстановлен">График ок</button>
       </div>
     </div>
 
@@ -313,51 +306,13 @@
       </div>
     </div>
 
-    <div class="card">
-      <div class="label">Чек-лист водителя</div>
-      <ul class="checks" id="checks"></ul>
-    </div>
-
-    <div class="card">
-      <div class="label">Переписка с диспетчером <span id="msg-count"></span></div>
-      <div class="inbox" id="inbox"><div class="empty">Пока пусто</div></div>
-    </div>
-
     <p class="updated" id="updated">—</p>
-  </div>
-
-  <div class="dock" id="dock" hidden>
-    <p class="dock-label">Быстрый ответ диспетчеру</p>
-    <div class="quick">
-      <button type="button" class="primary" data-reply="Принял, выполняю">Принял</button>
-      <button type="button" data-reply="В пробке / затор">В пробке</button>
-      <button type="button" data-reply="На остановке, долгая посадка">На остановке</button>
-      <button type="button" data-reply="Нужна помощь / резерв">Нужна помощь</button>
-      <button type="button" data-reply="График восстановлен">График ок</button>
-    </div>
   </div>
 
   <script src="/static/auth.js"></script>
   <script>
     const STATUS = { on_route: "в пути", at_stop: "на остановке", break: "обед / простой" };
     const RISK_RU = { green: "норма", yellow: "внимание", red: "риск срыва" };
-    const CHECKS = {
-      green: [
-        "Держите интервал по графику",
-        "Следите за сообщениями диспетчера",
-        "На остановках не задерживайтесь без нужды",
-      ],
-      yellow: [
-        "Подтяните среднюю скорость к рекомендации",
-        "Сократите простой на ближайшей остановке",
-        "Подтвердите диспетчеру, что приняли алерт",
-      ],
-      red: [
-        "Срочно выйдите на рекомендуемую скорость",
-        "Сообщите причину (пробка / посадка / поломка)",
-        "Ждите указаний диспетчера по интервалу",
-      ],
-    };
 
     let vehicleId = "";
     let lastMsgSig = "";
@@ -399,11 +354,6 @@
       lastRisk = lvl;
     }
 
-    function renderChecks(level) {
-      const items = CHECKS[level] || CHECKS.green;
-      el("checks").innerHTML = items.map((t) => `<li>${t}</li>`).join("");
-    }
-
     function renderSpeed(cur, sug) {
       const max = Math.max(cur, sug, 40);
       el("spd").textContent = Math.round(cur) + " км/ч";
@@ -427,6 +377,12 @@
       }
     }
 
+    function cleanText(text, mine) {
+      let t = String(text || "");
+      if (mine) t = t.replace(/^Водитель:\s*/i, "");
+      return t;
+    }
+
     function renderMessages(messages) {
       const box = el("inbox");
       const list = messages || [];
@@ -445,9 +401,11 @@
         const who = mine ? "вы" : "диспетчер";
         return `<div class="msg${mine ? " mine" : ""}${neu}">
           <time><span>${new Date(m.ts * 1000).toLocaleTimeString("ru-RU")}</span><span>${who}</span></time>
-          ${m.text}
+          ${cleanText(m.text, mine)}
         </div>`;
       }).join("");
+      // всегда показываем свежие сверху — прокрутка к началу
+      box.scrollTop = 0;
     }
 
     async function load() {
@@ -456,7 +414,6 @@
       if (r.status === 404) {
         el("wait").hidden = false;
         el("panel").hidden = true;
-        el("dock").hidden = true;
         el("wait").textContent =
           "ТС " + vehicleId + " ещё нет в потоке — подождите эмулятор или попросите диспетчера.";
         return;
@@ -466,7 +423,6 @@
 
       el("wait").hidden = true;
       el("panel").hidden = false;
-      el("dock").hidden = false;
 
       const risk = d.risk_level || "green";
       setRisk(risk);
@@ -493,7 +449,6 @@
         .map((c, i) => `<span class="chip${i === 0 ? " on" : ""}">${c}</span>`)
         .join("");
 
-      renderChecks(risk);
       renderMessages(d.messages);
       el("updated").textContent =
         "обновлено " + new Date().toLocaleTimeString("ru-RU") +
