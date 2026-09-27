@@ -176,13 +176,45 @@
     }
     .empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
 
+    .compose {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .compose input {
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font: 500 14px var(--font);
+      color: var(--text);
+      background: #fff;
+      width: 100%;
+    }
+    .compose input:focus {
+      outline: 2px solid color-mix(in srgb, var(--theme) 35%, transparent);
+      border-color: var(--theme);
+    }
+    .compose button {
+      min-height: 44px;
+      min-width: 88px;
+      border: 0;
+      border-radius: 10px;
+      background: var(--theme);
+      color: #fff;
+      font: 600 14px var(--font);
+      cursor: pointer;
+      padding: 0 14px;
+    }
+    .compose button:disabled { opacity: .5; }
     .quick {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 8px;
     }
     .quick button {
-      min-height: 44px;
+      min-height: 40px;
       border: 1px solid var(--line);
       border-radius: 10px;
       background: #fff;
@@ -192,12 +224,6 @@
       padding: 8px 6px;
     }
     .quick button:active { transform: scale(.98); }
-    .quick button.primary {
-      background: var(--theme);
-      border-color: transparent;
-      color: #fff;
-      grid-column: 1 / -1;
-    }
     .quick button:disabled { opacity: .5; }
 
     #wait {
@@ -251,9 +277,14 @@
     <div class="card chat">
       <div class="label">Сообщения диспетчера <span id="msg-count"></span></div>
       <div class="inbox" id="inbox"><div class="empty">Пока пусто</div></div>
-      <div class="label">Ответить</div>
+      <form class="compose" id="compose">
+        <input id="msg-input" type="text" maxlength="200" autocomplete="off"
+               placeholder="Написать диспетчеру…" enterkeyhint="send" />
+        <button type="submit" id="msg-send">Отправить</button>
+      </form>
+      <div class="label">Быстрые ответы</div>
       <div class="quick">
-        <button type="button" class="primary" data-reply="Принял, выполняю">Принял</button>
+        <button type="button" data-reply="Принял, выполняю">Принял</button>
         <button type="button" data-reply="В пробке / затор">В пробке</button>
         <button type="button" data-reply="На остановке, долгая посадка">На остановке</button>
         <button type="button" data-reply="Нужна помощь / резерв">Нужна помощь</button>
@@ -456,17 +487,23 @@
     }
 
     async function reply(text) {
-      const buttons = document.querySelectorAll(".quick button");
+      const cleaned = String(text || "").trim();
+      if (!cleaned) {
+        toast("Введите текст");
+        return;
+      }
+      const buttons = document.querySelectorAll(".quick button, #msg-send");
       buttons.forEach((b) => (b.disabled = true));
       try {
         const r = await Auth.fetch(
           "/api/v1/driver/" + encodeURIComponent(vehicleId) + "/reply",
-          { method: "POST", body: JSON.stringify({ text }) }
+          { method: "POST", body: JSON.stringify({ text: cleaned }) }
         );
         if (!r.ok) {
           toast("Не удалось отправить");
           return;
         }
+        el("msg-input").value = "";
         toast("Отправлено диспетчеру");
         await load();
       } finally {
@@ -475,6 +512,10 @@
     }
 
     el("logout").onclick = () => Auth.logout();
+    el("compose").addEventListener("submit", (e) => {
+      e.preventDefault();
+      reply(el("msg-input").value);
+    });
     document.querySelectorAll(".quick button").forEach((b) => {
       b.addEventListener("click", () => reply(b.dataset.reply));
     });
