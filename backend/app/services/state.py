@@ -108,13 +108,20 @@ class AppState:
         else:
             self.incidents[inc.vehicle_id] = inc
 
-    def add_message(self, vehicle_id: str, text: str) -> DriverMessage:
+    def add_message(
+        self,
+        vehicle_id: str,
+        text: str,
+        *,
+        from_dispatcher: bool = True,
+    ) -> DriverMessage:
         self._msg_seq += 1
         msg = DriverMessage(
             id=f"m{self._msg_seq}",
             vehicle_id=vehicle_id,
             text=text,
             ts=time.time(),
+            from_dispatcher=from_dispatcher,
         )
         self.messages.setdefault(vehicle_id, []).append(msg)
         # keep last 50

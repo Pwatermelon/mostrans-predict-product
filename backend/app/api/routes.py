@@ -20,6 +20,7 @@ from app.auth import (
     require_dispatcher,
     require_user,
 )
+from app.config import settings
 from app.ndtp.parser import frame_from_dict
 
 router = APIRouter()
@@ -264,31 +265,71 @@ async def list_messages(
     return [m.to_dict() for m in request.app.state.state.messages.get(vehicle_id, [])]
 
 
+class DriverReplyIn(BaseModel):
+    text: str = Field(..., min_length=1, max_length=200)
+
+
 @router.get("/driver/{vehicle_id}", tags=["driver"])
 async def driver_view(
     request: Request,
     vehicle_id: str,
     user: User = Depends(require_user),
 ) -> dict[str, Any]:
-    """Упрощённый вид для водителя: задержка, скорость, inbox."""
+    """Мобильный вид водителя: риск, прогноз, скорость, причина, inbox."""
     ensure_driver_access(user, vehicle_id)
     state = request.app.state.state
     v = state.vehicles.get(vehicle_id)
     if not v:
         raise HTTPException(404, "ТС не найдено (ещё нет в потоке)")
+    inc = state.incidents.get(vehicle_id)
+    horizon = int(inc.horizon_sec) if inc else int(settings.predict_horizon_sec)
     return {
         "vehicle_id": vehicle_id,
         "route_id": v.route_id,
         "status": v.status,
+        "lat": v.lat,
+        "lon": v.lon,
+        "ts": v.ts,
         "current_delay_sec": v.current_delay_sec,
         "predicted_delay_sec": v.predicted_delay_sec,
+        "delay_prob": v.delay_prob,
         "suggested_speed_kmh": v.suggested_speed_kmh,
         "speed_kmh": v.speed_kmh,
         "risk_level": v.risk_level,
         "segment_name": v.segment_name,
-        "messages": [m.to_dict() for m in state.messages.get(vehicle_id, [])[-20:]],
+        "cause": inc.cause if inc else "Нормальный режим",
+        "pattern": inc.pattern if inc else "normal",
+        "recommendation": (
+            inc.recommendation
+            if inc
+            else "Держите интервал и скорость по графику"
+        ),
+        "horizon_sec": horizon,
+        "alert_active": bool(inc and v.risk_level != "green"),
+        "messages": [m.to_dict() for m in state.messages.get(vehicle_id, [])[-30:]],
         "model": v.model,
+        "mode": state.metrics.mode,
+        "degraded": state.metrics.degraded,
     }
+
+
+@router.post("/driver/{vehicle_id}/reply", tags=["driver"])
+async def driver_reply(
+    request: Request,
+    vehicle_id: str,
+    body: DriverReplyIn,
+    user: User = Depends(require_user),
+) -> dict[str, Any]:
+    """Быстрый ответ водителя диспетчеру (статус / подтверждение)."""
+    ensure_driver_access(user, vehicle_id)
+    text = body.text.strip()
+    if user.role == "driver":
+        text = f"Водитель: {text}"
+    msg = request.app.state.state.add_message(
+        vehicle_id, text, from_dispatcher=False
+    )
+    await request.app.state.state.broadcast()
+    return {"ok": True, "message": msg.to_dict()}
 
 
 @router.get("/routes/{route_id}/detail", tags=["analytics"])

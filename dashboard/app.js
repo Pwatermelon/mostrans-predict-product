@@ -341,9 +341,13 @@ function openIncident(vehicleId) {
     <p style="margin:0 0 6px;font-size:12px;color:var(--muted)">Последние сообщения</p>
     <div class="stops">${
       msgs.length
-        ? msgs.map((m) => `${new Date(m.ts * 1000).toLocaleTimeString("ru-RU")}: ${m.text}`).join("<br>")
+        ? msgs.map((m) => {
+            const who = m.from_dispatcher === false ? "водитель" : "диспетчер";
+            return `${new Date(m.ts * 1000).toLocaleTimeString("ru-RU")} · ${who}: ${m.text}`;
+          }).join("<br>")
         : "Пока нет — напишите в панели справа «Сообщение водителю»"
     }</div>
+    <a class="close-btn" href="/driver?v=${encodeURIComponent(vehicleId)}" style="display:block;text-align:center;text-decoration:none;margin-bottom:8px">Кабинет водителя</a>
     <button type="button" class="close-btn" id="drawer-close">Закрыть</button>
   `;
   el("drawer").hidden = false;

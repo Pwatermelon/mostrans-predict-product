@@ -2,139 +2,548 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
   <title>МосТранс — кабинет водителя</title>
   <meta name="theme-color" content="#c8102e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@500;600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #eef0f3; --surface: #fff; --line: #d5dae3; --text: #1a1f2a;
-      --muted: #5c6678; --red: #c8102e; --amber: #c47a00; --green: #0d7a4f;
-      --font: "IBM Plex Sans", sans-serif; --mono: "IBM Plex Mono", monospace;
+      --bg: #e8ebf0;
+      --surface: #fff;
+      --line: #d0d6e0;
+      --text: #1a1f2a;
+      --muted: #5c6678;
+      --red: #c8102e;
+      --amber: #c47a00;
+      --green: #0d7a4f;
+      --font: "IBM Plex Sans", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+      --safe-t: env(safe-area-inset-top, 0px);
+      --safe-b: env(safe-area-inset-bottom, 0px);
+      --risk: var(--green);
     }
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; }
     body {
-      margin: 0; min-height: 100dvh; font-family: var(--font); color: var(--text);
-      background: var(--bg); padding: 16px;
+      min-height: 100dvh;
+      font-family: var(--font);
+      color: var(--text);
+      background: var(--bg);
+      padding:
+        calc(12px + var(--safe-t))
+        12px
+        calc(88px + var(--safe-b))
+        12px;
+      max-width: 480px;
+      margin: 0 auto;
     }
-    h1 { font-size: 20px; margin: 0 0 4px; font-weight: 700; }
-    .sub { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
-    .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
-    .who { font-size: 13px; color: var(--text); font-weight: 600; }
+    body.risk-green { --risk: var(--green); --theme: #0d7a4f; }
+    body.risk-yellow { --risk: var(--amber); --theme: #c47a00; }
+    body.risk-red { --risk: var(--red); --theme: #c8102e; }
+
+    .top {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 10px; margin-bottom: 10px;
+    }
+    .who { font-size: 13px; font-weight: 600; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     button.link, a.back {
       background: none; border: 0; color: var(--muted); font: 600 13px var(--font);
-      cursor: pointer; text-decoration: underline; padding: 0;
+      cursor: pointer; text-decoration: underline; padding: 8px 0; flex-shrink: 0;
     }
+
+    .hero {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--risk);
+      border-radius: 10px;
+      padding: 14px 14px 12px;
+      margin-bottom: 10px;
+    }
+    .hero-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+    .badge {
+      font: 700 11px var(--font);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: #fff;
+      background: var(--risk);
+      border-radius: 999px;
+      padding: 6px 10px;
+      white-space: nowrap;
+    }
+    .route-line { font-size: 13px; color: var(--muted); margin: 0 0 6px; font-weight: 600; }
+    .delay {
+      font-family: var(--mono);
+      font-size: clamp(36px, 11vw, 48px);
+      font-weight: 500;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      color: var(--risk);
+      margin: 4px 0 8px;
+    }
+    .prob-wrap { margin-top: 8px; }
+    .prob-meta {
+      display: flex; justify-content: space-between;
+      font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 600;
+    }
+    .bar {
+      height: 10px; border-radius: 999px; background: #e3e7ee; overflow: hidden;
+    }
+    .bar > i {
+      display: block; height: 100%; width: 0%;
+      background: var(--risk); border-radius: inherit;
+      transition: width .35s ease;
+    }
+
     .card {
-      background: var(--surface); border: 1px solid var(--line);
-      border-radius: 6px; padding: 14px; margin-bottom: 10px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
     }
-    .big { font-family: var(--mono); font-size: 34px; font-weight: 500; letter-spacing: -0.03em; color: var(--text); }
-    .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; font-weight: 600; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .risk-green { color: var(--green); }
-    .risk-yellow { color: var(--amber); }
-    .risk-red { color: var(--red); }
-    .inbox { display: flex; flex-direction: column; gap: 8px; }
+    .label {
+      font-size: 11px; color: var(--muted); text-transform: uppercase;
+      letter-spacing: .05em; margin-bottom: 6px; font-weight: 700;
+    }
+    .tip {
+      font-size: 15px; line-height: 1.4; font-weight: 600;
+    }
+    .cause { font-size: 13px; color: var(--muted); margin-top: 6px; line-height: 1.35; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .stat .num {
+      font-family: var(--mono);
+      font-size: 24px;
+      font-weight: 500;
+      letter-spacing: -0.03em;
+    }
+    .stat .hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip {
+      font-size: 12px; font-weight: 600;
+      background: #f2f4f8; color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 999px; padding: 6px 10px;
+    }
+    .chip.on { background: color-mix(in srgb, var(--risk) 12%, #fff); border-color: color-mix(in srgb, var(--risk) 35%, var(--line)); color: var(--risk); }
+
+    .speed-cmp { margin-top: 8px; }
+    .speed-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      font-size: 13px; font-weight: 600; margin-bottom: 4px;
+    }
+    .speed-row span:last-child { font-family: var(--mono); }
+    .delta {
+      margin-top: 8px; font-size: 13px; font-weight: 700;
+      padding: 8px 10px; border-radius: 8px; background: #f2f4f8;
+    }
+    .delta.up { background: #fff4e8; color: var(--amber); }
+    .delta.down { background: #e8f6ef; color: var(--green); }
+    .delta.alert { background: #fdecee; color: var(--red); }
+
+    .checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .checks li {
+      display: flex; gap: 10px; align-items: flex-start;
+      font-size: 14px; line-height: 1.35; font-weight: 500;
+      padding: 10px 10px; border-radius: 8px; background: #f6f7fa; border: 1px solid var(--line);
+    }
+    .checks li::before {
+      content: ""; width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px;
+      border-radius: 50%; border: 2px solid var(--risk);
+      background:
+        radial-gradient(circle at center, var(--risk) 0 40%, transparent 42%);
+    }
+    .checks li.done { opacity: .55; text-decoration: line-through; }
+
+    .inbox { display: flex; flex-direction: column; gap: 8px; max-height: 42vh; overflow: auto; -webkit-overflow-scrolling: touch; }
     .msg {
-      padding: 10px 12px; border-radius: 4px;
+      padding: 10px 12px; border-radius: 8px;
       background: #f0f4fa; border: 1px solid var(--line);
-      font-size: 14px; line-height: 1.4; color: var(--text);
+      font-size: 14px; line-height: 1.4;
     }
-    .msg time { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-    #wait { color: var(--muted); font-size: 14px; }
+    .msg.mine { background: #eef8f2; border-color: #c7e4d4; }
+    .msg.new { outline: 2px solid color-mix(in srgb, var(--red) 45%, transparent); }
+    .msg time {
+      display: flex; justify-content: space-between; gap: 8px;
+      font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 4px;
+    }
+    .empty { color: var(--muted); font-size: 13px; }
+
+    .dock {
+      position: fixed;
+      left: 50%; transform: translateX(-50%);
+      bottom: 0; width: min(480px, 100%);
+      padding: 10px 12px calc(10px + var(--safe-b));
+      background: color-mix(in srgb, var(--surface) 92%, transparent);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid var(--line);
+      z-index: 20;
+    }
+    .dock-label {
+      font-size: 11px; color: var(--muted); font-weight: 700;
+      text-transform: uppercase; letter-spacing: .04em; margin: 0 0 6px;
+    }
+    .quick {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .quick button {
+      min-height: 48px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      font: 600 13px var(--font);
+      color: var(--text);
+      cursor: pointer;
+      padding: 8px 6px;
+    }
+    .quick button:active { transform: scale(.98); }
+    .quick button.primary {
+      background: var(--theme, var(--red));
+      border-color: transparent;
+      color: #fff;
+      grid-column: 1 / -1;
+    }
+    .quick button:disabled { opacity: .5; }
+
+    #wait {
+      padding: 28px 16px; text-align: center; color: var(--muted);
+      font-size: 14px; line-height: 1.45;
+      background: var(--surface); border: 1px dashed var(--line); border-radius: 10px;
+    }
+    .updated {
+      text-align: center; font-size: 11px; color: var(--muted);
+      margin: 4px 0 8px; font-family: var(--mono);
+    }
+    .toast {
+      position: fixed; left: 50%; top: calc(12px + var(--safe-t));
+      transform: translateX(-50%) translateY(-120%);
+      background: var(--text); color: #fff; font: 600 13px var(--font);
+      padding: 10px 14px; border-radius: 999px; z-index: 50;
+      transition: transform .25s ease; max-width: calc(100% - 24px);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+
+    @media (min-width: 520px) {
+      body { padding-bottom: calc(96px + var(--safe-b)); }
+    }
   </style>
 </head>
-<body>
+<body class="risk-green">
+  <div class="toast" id="toast" hidden></div>
+
   <div class="top">
     <a class="back" id="back" href="/login">← Выход</a>
+    <div class="who" id="who">…</div>
     <button type="button" class="link" id="logout">Выйти</button>
   </div>
-  <h1>Кабинет водителя</h1>
-  <p class="sub"><span class="who" id="who">…</span></p>
 
   <div id="wait">Ждём телематику по вашему ТС…</div>
+
   <div id="panel" hidden>
-    <div class="card">
-      <div class="label">Прогноз опоздания</div>
-      <div class="big" id="delay">—</div>
-      <div class="sub" id="meta"></div>
+    <div class="hero">
+      <div class="hero-row">
+        <p class="route-line" id="route-line">—</p>
+        <span class="badge" id="risk-badge">норма</span>
+      </div>
+      <div class="label">Прогноз опоздания (10–15 мин)</div>
+      <div class="delay" id="delay">—</div>
+      <div class="prob-wrap">
+        <div class="prob-meta">
+          <span>Вероятность срыва</span>
+          <span id="prob-txt">—</span>
+        </div>
+        <div class="bar"><i id="prob-bar"></i></div>
+      </div>
     </div>
+
+    <div class="card" id="action-card">
+      <div class="label">Что сделать сейчас</div>
+      <div class="tip" id="tip">—</div>
+      <div class="cause" id="cause"></div>
+    </div>
+
     <div class="grid">
-      <div class="card">
-        <div class="label">Реком. скорость</div>
-        <div class="big" style="font-size:26px" id="sug">—</div>
-      </div>
-      <div class="card">
+      <div class="card stat">
         <div class="label">Сейчас</div>
-        <div class="big" style="font-size:26px" id="spd">—</div>
+        <div class="num" id="spd">—</div>
+        <div class="hint">ваша скорость</div>
+      </div>
+      <div class="card stat">
+        <div class="label">Нужно</div>
+        <div class="num" id="sug">—</div>
+        <div class="hint">реком. средняя</div>
       </div>
     </div>
+
     <div class="card">
-      <div class="label">Сообщения диспетчера</div>
-      <div class="inbox" id="inbox"><div class="sub">Пока пусто</div></div>
+      <div class="label">Скорость к графику</div>
+      <div class="speed-cmp">
+        <div class="speed-row"><span>Текущая</span><span id="spd-line">—</span></div>
+        <div class="bar"><i id="spd-bar"></i></div>
+        <div class="speed-row" style="margin-top:8px"><span>Рекомендуемая</span><span id="sug-line">—</span></div>
+        <div class="bar"><i id="sug-bar" style="background:var(--muted)"></i></div>
+      </div>
+      <div class="delta" id="delta">—</div>
+    </div>
+
+    <div class="card">
+      <div class="label">Статус рейса</div>
+      <div class="chips" id="chips"></div>
+      <div class="grid" style="margin:12px 0 0; gap:8px">
+        <div>
+          <div class="label">Сейчас от графика</div>
+          <div class="num" style="font-size:20px" id="cur-delay">—</div>
+        </div>
+        <div>
+          <div class="label">Горизонт</div>
+          <div class="num" style="font-size:20px" id="horizon">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Чек-лист водителя</div>
+      <ul class="checks" id="checks"></ul>
+    </div>
+
+    <div class="card">
+      <div class="label">Переписка с диспетчером <span id="msg-count"></span></div>
+      <div class="inbox" id="inbox"><div class="empty">Пока пусто</div></div>
+    </div>
+
+    <p class="updated" id="updated">—</p>
+  </div>
+
+  <div class="dock" id="dock" hidden>
+    <p class="dock-label">Быстрый ответ диспетчеру</p>
+    <div class="quick">
+      <button type="button" class="primary" data-reply="Принял, выполняю">Принял</button>
+      <button type="button" data-reply="В пробке / затор">В пробке</button>
+      <button type="button" data-reply="На остановке, долгая посадка">На остановке</button>
+      <button type="button" data-reply="Нужна помощь / резерв">Нужна помощь</button>
+      <button type="button" data-reply="График восстановлен">График ок</button>
     </div>
   </div>
 
   <script src="/static/auth.js"></script>
   <script>
     const STATUS = { on_route: "в пути", at_stop: "на остановке", break: "обед / простой" };
+    const RISK_RU = { green: "норма", yellow: "внимание", red: "риск срыва" };
+    const CHECKS = {
+      green: [
+        "Держите интервал по графику",
+        "Следите за сообщениями диспетчера",
+        "На остановках не задерживайтесь без нужды",
+      ],
+      yellow: [
+        "Подтяните среднюю скорость к рекомендации",
+        "Сократите простой на ближайшей остановке",
+        "Подтвердите диспетчеру, что приняли алерт",
+      ],
+      red: [
+        "Срочно выйдите на рекомендуемую скорость",
+        "Сообщите причину (пробка / посадка / поломка)",
+        "Ждите указаний диспетчера по интервалу",
+      ],
+    };
+
     let vehicleId = "";
+    let lastMsgSig = "";
+    let lastRisk = "";
+
+    function el(id) { return document.getElementById(id); }
+
     function fmt(s) {
       const n = Math.round(Number(s) || 0);
-      if (Math.abs(n) < 60) return n + " с";
-      return Math.floor(Math.abs(n) / 60) + " мин " + (Math.abs(n) % 60) + " с";
+      const sign = n < 0 ? "−" : "";
+      const a = Math.abs(n);
+      if (a < 60) return sign + a + " с";
+      return sign + Math.floor(a / 60) + " мин " + (a % 60) + " с";
     }
+
+    function toast(text) {
+      const t = el("toast");
+      t.hidden = false;
+      t.textContent = text;
+      t.classList.add("show");
+      clearTimeout(toast._tm);
+      toast._tm = setTimeout(() => t.classList.remove("show"), 2200);
+    }
+
+    function buzz() {
+      try {
+        if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
+      } catch (_) {}
+    }
+
+    function setRisk(level) {
+      const lvl = RISK_RU[level] ? level : "green";
+      document.body.className = "risk-" + lvl;
+      el("risk-badge").textContent = RISK_RU[lvl];
+      if (lastRisk && lastRisk !== lvl && lvl !== "green") {
+        buzz();
+        toast(lvl === "red" ? "Риск срыва графика" : "Повышенный риск");
+      }
+      lastRisk = lvl;
+    }
+
+    function renderChecks(level) {
+      const items = CHECKS[level] || CHECKS.green;
+      el("checks").innerHTML = items.map((t) => `<li>${t}</li>`).join("");
+    }
+
+    function renderSpeed(cur, sug) {
+      const max = Math.max(cur, sug, 40);
+      el("spd").textContent = Math.round(cur) + " км/ч";
+      el("sug").textContent = Math.round(sug) + " км/ч";
+      el("spd-line").textContent = Math.round(cur) + " км/ч";
+      el("sug-line").textContent = Math.round(sug) + " км/ч";
+      el("spd-bar").style.width = Math.min(100, (cur / max) * 100) + "%";
+      el("sug-bar").style.width = Math.min(100, (sug / max) * 100) + "%";
+
+      const d = Math.round(sug - cur);
+      const box = el("delta");
+      box.className = "delta";
+      if (Math.abs(d) <= 2) {
+        box.textContent = "Скорость в норме относительно рекомендации";
+      } else if (d > 0) {
+        box.classList.add(d >= 8 ? "alert" : "up");
+        box.textContent = "Ускорьтесь примерно на +" + d + " км/ч к средней";
+      } else {
+        box.classList.add("down");
+        box.textContent = "Можно спокойнее: −" + Math.abs(d) + " км/ч к рекомендации";
+      }
+    }
+
+    function renderMessages(messages) {
+      const box = el("inbox");
+      const list = messages || [];
+      el("msg-count").textContent = list.length ? "(" + list.length + ")" : "";
+      if (!list.length) {
+        box.innerHTML = '<div class="empty">Сообщений нет — диспетчер ещё не писал</div>';
+        return;
+      }
+      const sig = list.map((m) => m.id).join(",");
+      const isNew = lastMsgSig && sig !== lastMsgSig;
+      if (isNew) buzz();
+      lastMsgSig = sig;
+      box.innerHTML = list.slice().reverse().map((m, i) => {
+        const mine = m.from_dispatcher === false;
+        const neu = isNew && i === 0 ? " new" : "";
+        const who = mine ? "вы" : "диспетчер";
+        return `<div class="msg${mine ? " mine" : ""}${neu}">
+          <time><span>${new Date(m.ts * 1000).toLocaleTimeString("ru-RU")}</span><span>${who}</span></time>
+          ${m.text}
+        </div>`;
+      }).join("");
+    }
+
     async function load() {
       if (!vehicleId) return;
       const r = await Auth.fetch("/api/v1/driver/" + encodeURIComponent(vehicleId));
       if (r.status === 404) {
-        document.getElementById("wait").hidden = false;
-        document.getElementById("panel").hidden = true;
-        document.getElementById("wait").textContent =
-          "ТС " + vehicleId + " ещё нет в потоке — подождите эмулятор…";
+        el("wait").hidden = false;
+        el("panel").hidden = true;
+        el("dock").hidden = true;
+        el("wait").textContent =
+          "ТС " + vehicleId + " ещё нет в потоке — подождите эмулятор или попросите диспетчера.";
         return;
       }
       if (!r.ok) return;
       const d = await r.json();
-      document.getElementById("wait").hidden = true;
-      document.getElementById("panel").hidden = false;
-      document.getElementById("delay").textContent = fmt(d.predicted_delay_sec);
-      document.getElementById("delay").className = "big risk-" + (d.risk_level || "green");
-      document.getElementById("sug").textContent = Math.round(d.suggested_speed_kmh) + " км/ч";
-      document.getElementById("spd").textContent = Math.round(d.speed_kmh) + " км/ч";
-      document.getElementById("meta").textContent =
-        `${d.route_id} · ${STATUS[d.status] || d.status} · ${d.segment_name || ""} · ${d.model}`;
-      const box = document.getElementById("inbox");
-      if (!d.messages || !d.messages.length) {
-        box.innerHTML = '<div class="sub">Сообщений нет</div>';
-      } else {
-        box.innerHTML = d.messages.slice().reverse().map((m) =>
-          `<div class="msg"><time>${new Date(m.ts * 1000).toLocaleTimeString("ru-RU")}</time>${m.text}</div>`
-        ).join("");
+
+      el("wait").hidden = true;
+      el("panel").hidden = false;
+      el("dock").hidden = false;
+
+      const risk = d.risk_level || "green";
+      setRisk(risk);
+      el("delay").textContent = fmt(d.predicted_delay_sec);
+      const pct = Math.round((Number(d.delay_prob) || 0) * 100);
+      el("prob-txt").textContent = pct + "%";
+      el("prob-bar").style.width = Math.min(100, pct) + "%";
+
+      el("route-line").textContent =
+        (d.route_id || "—") + " · " + (STATUS[d.status] || d.status || "—");
+      el("tip").textContent = d.recommendation || "Держите график";
+      el("cause").textContent = d.cause ? ("Причина: " + d.cause) : "";
+
+      renderSpeed(Number(d.speed_kmh) || 0, Number(d.suggested_speed_kmh) || 0);
+      el("cur-delay").textContent = fmt(d.current_delay_sec);
+      el("horizon").textContent = Math.round((d.horizon_sec || 900) / 60) + " мин";
+
+      const chips = [];
+      if (d.segment_name) chips.push(d.segment_name);
+      chips.push(STATUS[d.status] || d.status || "статус");
+      if (d.alert_active) chips.push("алерт активен");
+      if (d.degraded) chips.push("режим истории");
+      el("chips").innerHTML = chips
+        .map((c, i) => `<span class="chip${i === 0 ? " on" : ""}">${c}</span>`)
+        .join("");
+
+      renderChecks(risk);
+      renderMessages(d.messages);
+      el("updated").textContent =
+        "обновлено " + new Date().toLocaleTimeString("ru-RU") +
+        (d.mode ? " · " + d.mode : "");
+    }
+
+    async function reply(text) {
+      const buttons = document.querySelectorAll(".quick button");
+      buttons.forEach((b) => (b.disabled = true));
+      try {
+        const r = await Auth.fetch(
+          "/api/v1/driver/" + encodeURIComponent(vehicleId) + "/reply",
+          { method: "POST", body: JSON.stringify({ text }) }
+        );
+        if (!r.ok) {
+          toast("Не удалось отправить");
+          return;
+        }
+        toast("Отправлено диспетчеру");
+        await load();
+      } finally {
+        buttons.forEach((b) => (b.disabled = false));
       }
     }
-    document.getElementById("logout").onclick = () => Auth.logout();
+
+    el("logout").onclick = () => Auth.logout();
+    document.querySelectorAll(".quick button").forEach((b) => {
+      b.addEventListener("click", () => reply(b.dataset.reply));
+    });
+
     (async () => {
       const user = await Auth.require();
       if (!user) return;
       if (user.role === "dispatcher") {
-        document.getElementById("back").href = "/";
-        document.getElementById("back").textContent = "← Пульт";
+        el("back").href = "/";
+        el("back").textContent = "← Пульт";
         vehicleId = new URLSearchParams(location.search).get("v") || "";
         if (!vehicleId) {
-          document.getElementById("who").textContent = "укажите ?v=ТС-1000";
+          el("who").textContent = "укажите ?v=ТС-1000";
+          el("wait").textContent = "Откройте кабинет с параметром ?v=ТС-1000";
           return;
         }
       } else {
         vehicleId = user.vehicle_id;
-        document.getElementById("back").href = "#";
-        document.getElementById("back").onclick = (e) => { e.preventDefault(); Auth.logout(); };
+        el("back").href = "#";
+        el("back").onclick = (e) => { e.preventDefault(); Auth.logout(); };
       }
-      document.getElementById("who").textContent = user.display_name + (vehicleId ? " · " + vehicleId : "");
+      el("who").textContent = (user.display_name || user.login) + (vehicleId ? " · " + vehicleId : "");
       await load();
-      setInterval(load, 5000);
+      setInterval(load, 4000);
     })();
   </script>
 </body>
