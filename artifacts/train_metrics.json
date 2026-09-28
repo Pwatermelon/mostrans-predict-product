@@ -1,7 +1,0 @@
-{
-  "test_mae": 33.68559128190765,
-  "mae_zero_test": 103.33711048158641,
-  "score_est": 1.0,
-  "best_iter": 1492,
-  "n_train_full": 4787
-}

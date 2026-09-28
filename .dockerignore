@@ -5,6 +5,10 @@ __pycache__
 .DS_Store
 **/ndtp-telemetry-emulator.tar
 docs/_build
+docs/sphinx/.doctrees
+docs/sphinx/.buildinfo
+docs/submission_links.md
 *.log
 .idea
 .vscode
+_local
